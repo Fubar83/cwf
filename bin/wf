@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Startar wf med tsx från repots egen node_modules.
+set -euo pipefail
+here="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+exec node --import "file://$here/node_modules/tsx/dist/loader.mjs" "$here/src/cli.ts" "$@"
