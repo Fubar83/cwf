@@ -7,9 +7,9 @@ import { z } from "zod/v4";
 const GateStep = z.object({
   name: z.string(),
   run: z.string(),
-  /** Steget körs bara om filen finns i repot (relativ sökväg). */
+  /** The step only runs if this file exists in the repo (relative path). */
   when: z.string().optional(),
-  /** Kommando som Copilot får som förslag när steget misslyckas. cwf kör det aldrig själv. */
+  /** Command Copilot gets as a suggestion when the step fails. cwf never runs it itself. */
   fix: z.string().optional(),
 });
 export type GateStep = z.infer<typeof GateStep>;
@@ -39,8 +39,8 @@ export const ConfigSchema = z.object({
       main: z.string().default("gpt-6.1-sol"),
       researcher: z.string().default("gpt-6-luna"),
       /**
-       * USD per miljon tokens, för live-uppskattning av AIC (1 AIC = 0,01 USD).
-       * Sessionens totalsumma från SDK:n ersätter uppskattningen när den finns.
+       * USD per million tokens, for the live estimate of AIC (1 AIC = 0.01 USD).
+       * The session total from the SDK replaces the estimate when it is available.
        */
       prices: z
         .record(z.string(), z.object({ input: z.number(), output: z.number() }))
@@ -51,12 +51,12 @@ export const ConfigSchema = z.object({
     .prefault({}),
   limits: z
     .object({
-      /** Mjukt AIC-tak per körning. cwf frågar om höjning när det nås. */
+      /** Soft AIC cap per run. cwf asks about raising it when it is reached. */
       aicPerRun: z.number().int().min(30).default(1000),
       buildRounds: z.number().int().min(1).default(4),
-      /** Minuter utan händelser innan en session räknas som hängd. */
+      /** Minutes without events before a session counts as hung. */
       idleTimeoutMin: z.number().min(1).default(10),
-      /** Maxtid en cwf-dialog får vara öppen innan cwf pausar. */
+      /** Maximum time a cwf dialog may stay open before cwf pauses. */
       waitForUserMin: z.number().min(1).default(20),
     })
     .prefault({}),
@@ -84,21 +84,21 @@ export class ConfigError extends Error {}
 export function loadConfig(path = configPath()): Config {
   if (!existsSync(path)) {
     throw new ConfigError(
-      `Hittar ingen inställningsfil på ${path}. Kopiera cwf.config.example.yaml dit och fyll i.`,
+      `No config file at ${path}. Copy cwf.config.example.yaml there and fill it in.`,
     );
   }
   const raw = parseYaml(readFileSync(path, "utf8"));
   const parsed = ConfigSchema.safeParse(raw);
   if (!parsed.success) {
-    const lines = parsed.error.issues.map((i) => `  ${i.path.join(".") || "(rot)"}: ${i.message}`);
-    throw new ConfigError(`Fel i ${path}:\n${lines.join("\n")}`);
+    const lines = parsed.error.issues.map((i) => `  ${i.path.join(".") || "(root)"}: ${i.message}`);
+    throw new ConfigError(`Error in ${path}:\n${lines.join("\n")}`);
   }
   const cfg = parsed.data;
   cfg.projectsDir = resolve(cfg.projectsDir.replace(/^~(?=$|\/)/, homedir()));
   return cfg;
 }
 
-/** Regler för ett repo: repo-specifika ersätter standard fält för fält. */
+/** Rules for a repo: repo-specific values replace the defaults field by field. */
 export function rulesFor(cfg: Config, repo: string): RepoRules {
   const d = cfg.repos.defaults;
   const r = (cfg.repos as Record<string, RepoRules | undefined>)[repo];
@@ -108,15 +108,15 @@ export function rulesFor(cfg: Config, repo: string): RepoRules {
   };
 }
 
-/** Normaliserar nyckeln och hittar Jira-projektet. "vfs-1350" → "VFS-1350". */
+/** Normalizes the key and finds the Jira project. "vfs-1350" → "VFS-1350". */
 export function resolveIssue(cfg: Config, rawKey: string) {
   const key = rawKey.trim().toUpperCase();
   const m = /^([A-Z][A-Z0-9]+)-(\d+)$/.exec(key);
-  if (!m) throw new ConfigError(`"${rawKey}" ser inte ut som en Jira-nyckel (t.ex. VFS-1350).`);
+  if (!m) throw new ConfigError(`"${rawKey}" does not look like a Jira key (e.g. VFS-1350).`);
   const project = cfg.jira.projects.find((p) => p.key === m[1]);
   if (!project) {
     const known = cfg.jira.projects.map((p) => p.key).join(", ");
-    throw new ConfigError(`Projektet ${m[1]} finns inte i inställningarna (kända: ${known}).`);
+    throw new ConfigError(`The project ${m[1]} is not in the settings (known: ${known}).`);
   }
   return { key, slug: key.toLowerCase(), project };
 }

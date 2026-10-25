@@ -13,14 +13,14 @@ const START = "<!-- cwf:start -->";
 const END = "<!-- cwf:end -->";
 const MAX_BODY = 60_000;
 
-/** PR:er i beroendeordning: de som andra beror på kommer först. */
+/** PRs in dependency order: the ones others depend on come first. */
 export function orderByDependencies(prs: PrInfo[]): PrInfo[] {
   const byRepo = new Map(prs.map((p) => [p.repo, p]));
   const out: PrInfo[] = [];
   const visiting = new Set<string>();
   const visit = (p: PrInfo) => {
     if (out.includes(p)) return;
-    if (visiting.has(p.repo)) throw new Error(`Cirkulärt beroende mellan PR:er (${p.repo}).`);
+    if (visiting.has(p.repo)) throw new Error(`Circular dependency between PRs (${p.repo}).`);
     visiting.add(p.repo);
     for (const d of p.dependsOn) {
       const dep = byRepo.get(d);
@@ -33,10 +33,10 @@ export function orderByDependencies(prs: PrInfo[]): PrInfo[] {
   return out;
 }
 
-/** Bygger cwf:s del av PR-texten. Resten av texten (det någon skrivit för hand) lämnas orörd. */
+/** Builds cwf's part of the PR text. The rest of the text (what someone wrote by hand) is left untouched. */
 export function mergeBody(existing: string | undefined, cwfPart: string): string {
   let part = `${START}\n${cwfPart}\n${END}`;
-  if (part.length > MAX_BODY) part = `${START}\n${cwfPart.slice(0, MAX_BODY - 200)}\n\n…(kortad av cwf)\n${END}`;
+  if (part.length > MAX_BODY) part = `${START}\n${cwfPart.slice(0, MAX_BODY - 200)}\n\n…(truncated by cwf)\n${END}`;
   if (!existing) return part;
   const s = existing.indexOf(START);
   const e = existing.indexOf(END);
@@ -44,7 +44,7 @@ export function mergeBody(existing: string | undefined, cwfPart: string): string
   return `${part}\n\n${existing}`;
 }
 
-/** Sammanfattning inför publiceringsbeslutet (K2). */
+/** Summary shown before the publish decision. */
 export async function summary(ctx: CwfCtx, prs: PrInfo[]): Promise<string> {
   const lines: string[] = [];
   for (const p of prs) {
@@ -56,8 +56,8 @@ export async function summary(ctx: CwfCtx, prs: PrInfo[]): Promise<string> {
       .split("\n")
       .filter((f) => /(test|spec)/i.test(f));
     lines.push(`\n■ ${p.repo}: ${p.title}`, `  ${stat}`, ...log.split("\n").map((l) => `    ${l}`));
-    if (p.dependsOn.length) lines.push(`  Beror på: ${p.dependsOn.join(", ")}`);
-    if (deleted.length) lines.push(`  ⚠ Borttagna testfiler: ${deleted.join(", ")}`);
+    if (p.dependsOn.length) lines.push(`  Depends on: ${p.dependsOn.join(", ")}`);
+    if (deleted.length) lines.push(`  ⚠ Deleted test files: ${deleted.join(", ")}`);
   }
   const decisions = (ctx.store.read("decisions.log") ?? "")
     .split("\n")
@@ -65,24 +65,24 @@ export async function summary(ctx: CwfCtx, prs: PrInfo[]): Promise<string> {
     .map((l) => JSON.parse(l) as { decision: string; why?: string; deviatesFromPlan?: boolean; source?: string })
     .filter((d) => d.deviatesFromPlan);
   if (decisions.length) {
-    lines.push("\nAvvikelser från planen:");
+    lines.push("\nDeviations from the plan:");
     for (const d of decisions) lines.push(`  • ${d.decision} – ${d.why ?? ""}`);
   }
   return lines.join("\n");
 }
 
-/** Publiceringsbeslutet. Returnerar valt läge eller null för paus. */
+/** The publish decision. Returns the chosen mode, or null for a pause. */
 export async function askPublish(ctx: CwfCtx, prs: PrInfo[]): Promise<PublishMode | null> {
   const { ui, cfg } = ctx;
-  ui.heading("Redo att publicera");
+  ui.heading("Ready to publish");
   ui.info(await summary(ctx, prs));
-  ui.info("\n✓ Alla kontroller är gröna.");
-  const draft = { value: "draft" as const, label: "Draft-PR" };
-  const ready = { value: "ready" as const, label: "Redo för granskning" };
+  ui.info("\n✓ All checks are green.");
+  const draft = { value: "draft" as const, label: "Draft PR" };
+  const ready = { value: "ready" as const, label: "Ready for review" };
   const order = cfg.publish.default === "ready" ? [ready, draft] : [draft, ready];
-  const r: Reply<"draft" | "ready" | "pause"> = await ui.select("Hur vill du publicera?", [
+  const r: Reply<"draft" | "ready" | "pause"> = await ui.select("How do you want to publish?", [
     ...order,
-    { value: "pause", label: "Pausa" },
+    { value: "pause", label: "Pause" },
   ]);
   if (r.kind === "timeout" || r.value === "pause") return null;
   return r.value;
@@ -101,8 +101,8 @@ async function findPr(wt: string, branch: string): Promise<GhPr | undefined> {
 }
 
 /**
- * Pushar och skapar/uppdaterar PR:er stegvis. Varje steg sparas, så att en ny
- * körning efter ett avbrott fortsätter där den slutade utan dubbletter.
+ * Pushes and creates/updates PRs step by step. Each step is saved, so a new run after an
+ * interruption continues where it stopped, without duplicates.
  */
 export async function publish(ctx: CwfCtx, prs: PrInfo[], mode: PublishMode): Promise<void> {
   const { state, cfg, ui } = ctx;
@@ -113,10 +113,10 @@ export async function publish(ctx: CwfCtx, prs: PrInfo[], mode: PublishMode): Pr
       const wt = worktreeDir(cfg, ctx.slug, p.repo);
       const step = (state.publish[p.repo] ??= { pushed: false, ready: false });
 
-      // Push varje gång: nya commits kan ha tillkommit. Aldrig --force.
+      // Push every time: new commits may have appeared. Never --force.
       const push = await run("git", ["push", "-u", "origin", `HEAD:refs/heads/${state.branch}`], { cwd: wt });
       if (push.code !== 0) {
-        throw new Error(`Push av ${p.repo} avvisades: ${push.stderr.trim()}\nKör git merge origin/${state.branch} eller kontrollera skyddsregler.`);
+        throw new Error(`Push of ${p.repo} was rejected: ${push.stderr.trim()}\nRun git merge origin/${state.branch} or check the branch protection rules.`);
       }
       step.pushed = true;
       ctx.save();
@@ -129,7 +129,7 @@ export async function publish(ctx: CwfCtx, prs: PrInfo[], mode: PublishMode): Pr
         p.body.trim(),
         "",
         `Jira: https://${cfg.jira.site.replace(/^https?:\/\//, "")}/browse/${state.key}`,
-        ...(deps.length ? ["", "Mergas efter:", ...deps] : []),
+        ...(deps.length ? ["", "Merge after:", ...deps] : []),
       ].join("\n");
 
       const existing = await findPr(wt, state.branch);

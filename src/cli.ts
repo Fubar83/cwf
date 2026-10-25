@@ -8,19 +8,18 @@ import { preflight } from "./preflight.ts";
 import { LockedError } from "./state.ts";
 import { TerminalUI } from "./ui.ts";
 
-const HELP = `cwf – tar ett Jira-ärende till en PR med GitHub Copilot
+const HELP = `cwf – takes a Jira issue to a pull request with GitHub Copilot
 
-Användning:
-  cwf run <NYCKEL> [repon…] [flaggor]   Starta eller fortsätt ett ärende
-  cwf clean                             Städa bort klara ärenden
+Usage:
+  cwf run <KEY> [repos…] [flags]   Start or continue an issue
+  cwf clean                        Remove finished issues
 
-Flaggor för run:
-  -m, --note <text>     Anteckning till Copilot (krävs för att fortsätta ett blockerat ärende)
-      --no-publish      Stanna före publicering
-      --aic-limit <n>   AI-kreditak för den här körningen
-      --allow-host      Tillåt körning utanför devcontainer
+Flags for run:
+  -m, --note <text>     Note for Copilot (required to continue a blocked issue)
+      --no-publish      Stop before publishing
+      --aic-limit <n>   AI-credit cap for this run
 
-Exitkoder: 0 klart · 10 pausad · 20 blockerad · 1 fel
+Exit codes: 0 done · 10 paused · 20 blocked · 1 error
 `;
 
 async function main(argv: string[]): Promise<number> {
@@ -31,7 +30,6 @@ async function main(argv: string[]): Promise<number> {
       note: { type: "string", short: "m" },
       "no-publish": { type: "boolean", default: false },
       "aic-limit": { type: "string" },
-      "allow-host": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
   });
@@ -52,21 +50,21 @@ async function main(argv: string[]): Promise<number> {
   }
   const [key, ...repos] = rest;
   if (!key) {
-    console.error("Ange en Jira-nyckel, t.ex. cwf run VFS-1350.");
+    console.error("Give a Jira key, e.g. cwf run VFS-1350.");
     return 1;
   }
 
-  const checks = await preflight(cfg, { allowHost: values["allow-host"] });
+  const checks = await preflight(cfg);
   const failed = checks.filter((c) => !c.ok);
   if (failed.length) {
-    ui.heading("Förkontrollen misslyckades");
+    ui.heading("Preflight failed");
     for (const c of failed) ui.info(`  ✗ ${c.name}${c.detail ? ` – ${c.detail}` : ""}`);
     return EXIT.error;
   }
 
   const aicLimit = values["aic-limit"] ? Number(values["aic-limit"]) : undefined;
   if (aicLimit !== undefined && !(aicLimit >= 30)) {
-    console.error("--aic-limit måste vara minst 30.");
+    console.error("--aic-limit must be at least 30.");
     return 1;
   }
 
@@ -90,7 +88,7 @@ main(process.argv.slice(2)).then(
   (code) => process.exit(code),
   (e) => {
     if (e instanceof ConfigError || e instanceof LockedError) console.error(e.message);
-    else if (e instanceof CommandError) console.error(`Fel: ${e.message}`);
+    else if (e instanceof CommandError) console.error(`Error: ${e.message}`);
     else console.error(e?.stack ?? e);
     process.exit(EXIT.error);
   },

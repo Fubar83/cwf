@@ -9,17 +9,17 @@ export interface Choice<T extends string> {
   label: string;
 }
 
-/** Svar från en dialog. `timeout` betyder att användaren inte svarade i tid och cwf ska pausa. */
+/** A dialog reply. `timeout` means the user did not answer in time and cwf should pause. */
 export type Reply<T> = { kind: "ok"; value: T } | { kind: "timeout" };
 
-/** Allt cwf visar eller frågar går genom UI, så att tester kan byta ut det. */
+/** Everything cwf shows or asks goes through the UI, so tests can replace it. */
 export interface UI {
   info(msg: string): void;
   warn(msg: string): void;
   heading(msg: string): void;
   select<T extends string>(question: string, choices: Choice<T>[]): Promise<Reply<T>>;
   text(question: string): Promise<Reply<string>>;
-  /** Öppnar $EDITOR med given text och returnerar resultatet. */
+  /** Opens $EDITOR with the given text and returns the result. */
   editor(initial: string): Promise<Reply<string>>;
 }
 
@@ -52,7 +52,7 @@ export class TerminalUI implements UI {
       return { kind: "ok", value };
     } catch (e) {
       if ((e as Error).name === "AbortError") {
-        console.log(c.dim("\n(ingen aktivitet – pausar)"));
+        console.log(c.dim("\n(no activity, pausing)"));
         return { kind: "timeout" };
       }
       throw e;
@@ -66,12 +66,12 @@ export class TerminalUI implements UI {
     console.log(`\n${c.bold(question)}`);
     choices.forEach((ch, i) => console.log(`  ${i + 1}) ${ch.label}`));
     for (;;) {
-      const r = await this.ask("Val: ");
+      const r = await this.ask("Choice: ");
       if (r.kind === "timeout") return r;
       const n = Number(r.value.trim());
       const picked = choices[n - 1];
       if (Number.isInteger(n) && picked) return { kind: "ok", value: picked.value };
-      console.log(`Skriv en siffra mellan 1 och ${choices.length}.`);
+      console.log(`Enter a number from 1 to ${choices.length}.`);
     }
   }
 
@@ -87,12 +87,12 @@ export class TerminalUI implements UI {
     const r = spawnSync("bash", ["-lc", `${editor} "$1"`, "_", file], { stdio: "inherit" });
     const value = readFileSync(file, "utf8");
     rmSync(dir, { recursive: true, force: true });
-    if (r.status !== 0) throw new Error(`Editorn (${editor}) avslutades med fel.`);
+    if (r.status !== 0) throw new Error(`The editor (${editor}) exited with an error.`);
     return { kind: "ok", value };
   }
 }
 
-/** Skriptad UI för tester: svaren tas i ordning. Slut på svar = timeout (paus). */
+/** Scripted UI for tests: answers are taken in order. No answers left = timeout (pause). */
 export class ScriptedUI implements UI {
   readonly output: string[] = [];
   constructor(private answers: string[]) {}
@@ -114,7 +114,7 @@ export class ScriptedUI implements UI {
     const r = this.next();
     if (r.kind === "timeout") return r;
     const hit = choices.find((ch) => ch.value === r.value);
-    if (!hit) throw new Error(`ScriptedUI: "${r.value}" finns inte bland ${choices.map((c) => c.value)}`);
+    if (!hit) throw new Error(`ScriptedUI: "${r.value}" is not one of ${choices.map((c) => c.value)}`);
     return { kind: "ok", value: hit.value };
   }
   async text(q: string) {

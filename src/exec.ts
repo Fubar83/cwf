@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { delimiter, join } from "node:path";
 
 export interface ExecResult {
   code: number;
@@ -11,18 +13,53 @@ export interface ExecOptions {
   env?: NodeJS.ProcessEnv;
   input?: string;
   timeoutMs?: number;
-  /** Kör genom bash -lc (för gate- och setup-kommandon från inställningarna). */
+  /** Runs through bash -lc (for gate and setup commands from the config). */
   shell?: boolean;
 }
 
-/** Kör ett kommando utan att kasta vid fel. Returnerar alltid kod och utdata. */
+/**
+ * Finds a command on PATH the way cmd.exe does (PATHEXT on Windows).
+ * Returns the full path, or undefined if it is not found.
+ */
+function findOnPath(cmd: string): string | undefined {
+  const exts = (process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";").filter(Boolean);
+  for (const dir of (process.env.PATH ?? "").split(delimiter)) {
+    if (!dir) continue;
+    for (const ext of [...exts, ""]) {
+      const p = join(dir, cmd + ext);
+      if (existsSync(p)) return p;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * On Windows, spawn cannot run .cmd or .bat files directly (npm installs tools such as
+ * copilot and twg that way). Those are started through cmd.exe instead.
+ */
+function resolveCommand(cmd: string, args: string[]): { file: string; args: string[]; verbatim: boolean } {
+  if (process.platform !== "win32" || /[\\/]/.test(cmd)) return { file: cmd, args, verbatim: false };
+  const found = findOnPath(cmd);
+  if (!found || !/\.(cmd|bat)$/i.test(found)) return { file: found ?? cmd, args, verbatim: false };
+  const quote = (a: string) => `"${a.replace(/"/g, '\\"')}"`;
+  return {
+    file: process.env.ComSpec ?? "cmd.exe",
+    args: ["/d", "/s", "/c", `"${[found, ...args].map(quote).join(" ")}"`],
+    verbatim: true,
+  };
+}
+
+/** Runs a command without throwing on failure. Always returns the exit code and output. */
 export function run(cmd: string, args: string[], opts: ExecOptions = {}): Promise<ExecResult> {
   return new Promise((resolve) => {
-    const [file, argv] = opts.shell ? ["bash", ["-lc", [cmd, ...args].join(" ")]] : [cmd, args];
-    const child = spawn(file, argv as string[], {
+    const call = opts.shell
+      ? { file: "bash", args: ["-lc", [cmd, ...args].join(" ")], verbatim: false }
+      : resolveCommand(cmd, args);
+    const child = spawn(call.file, call.args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.env },
       stdio: ["pipe", "pipe", "pipe"],
+      windowsVerbatimArguments: call.verbatim,
     });
     let stdout = "";
     let stderr = "";
@@ -50,11 +87,11 @@ export class CommandError extends Error {
     readonly command: string,
     readonly result: ExecResult,
   ) {
-    super(`${command} misslyckades (kod ${result.code}): ${(result.stderr || result.stdout).trim().slice(0, 2000)}`);
+    super(`${command} failed (exit ${result.code}): ${(result.stderr || result.stdout).trim().slice(0, 2000)}`);
   }
 }
 
-/** Som run, men kastar CommandError vid felkod. */
+/** Like run, but throws CommandError on a non-zero exit code. */
 export async function must(cmd: string, args: string[], opts: ExecOptions = {}): Promise<string> {
   const r = await run(cmd, args, opts);
   if (r.code !== 0) throw new CommandError(`${cmd} ${args.join(" ")}`, r);

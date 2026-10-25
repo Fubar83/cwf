@@ -23,39 +23,38 @@ export interface CwfCtx {
 const ok = (text: string): ToolResult => ({ ok: true, text });
 const fail = (text: string): ToolResult => ({ ok: false, text });
 
-
-// ───────────────────────── Frågor ─────────────────────────
+// ───────────────────────── Questions ─────────────────────────
 
 /**
- * Ställer frågorna en i taget och sparar varje svar direkt.
- * Pausar användaren (eller svarar inte i tid) sparas resten som väntande frågor.
+ * Asks the questions one at a time and saves each answer immediately.
+ * If the user pauses (or does not answer in time), the rest are kept as pending questions.
  */
 export async function askQuestions(ctx: CwfCtx, questions: Question[]): Promise<"answered" | "paused"> {
   const { ui, state } = ctx;
-  // Lägg alla som väntande först, så att inget tappas vid avbrott.
+  // Add all of them as pending first, so nothing is lost on an interruption.
   const pendingIds = new Set(state.pendingQuestions.map((q) => q.id));
   for (const q of questions) if (!pendingIds.has(q.id)) state.pendingQuestions.push(q);
   ctx.save();
 
   for (const q of questions) {
-    ui.heading(`Fråga: ${q.question}`);
-    ui.info(`Undersökt: ${q.investigated}`);
+    ui.heading(`Question: ${q.question}`);
+    ui.info(`Investigated: ${q.investigated}`);
     q.options.forEach((o, i) => ui.info(`  ${String.fromCharCode(65 + i)}. ${o.label} – ${o.consequence}`));
-    ui.info(`Rekommendation: ${q.recommendation} (${q.why})`);
+    ui.info(`Recommendation: ${q.recommendation} (${q.why})`);
 
     const choices = [
       ...q.options.map((o, i) => ({ value: `opt${i}`, label: `${String.fromCharCode(65 + i)}. ${o.label}` })),
-      { value: "own", label: "Eget svar" },
-      { value: "pause", label: "Pausa (svara senare)" },
+      { value: "own", label: "Own answer" },
+      { value: "pause", label: "Pause (answer later)" },
     ];
-    const r = await ui.select("Ditt svar", choices);
+    const r = await ui.select("Your answer", choices);
     if (r.kind === "timeout" || r.value === "pause") {
       ctx.save();
       return "paused";
     }
     let answer: string;
     if (r.value === "own") {
-      const t = await ui.text("Skriv ditt svar:");
+      const t = await ui.text("Write your answer:");
       if (t.kind === "timeout" || !t.value.trim()) return "paused";
       answer = t.value.trim();
     } else {
@@ -66,7 +65,7 @@ export async function askQuestions(ctx: CwfCtx, questions: Question[]): Promise<
     ctx.save();
   }
 
-  ui.info("\nSammanfattning:");
+  ui.info("\nSummary:");
   for (const q of questions) {
     const a = state.answers.findLast((x) => x.id === q.id);
     if (a) ui.info(`  • ${q.question} → ${a.answer}`);
@@ -78,20 +77,20 @@ const askUser = (ctx: CwfCtx, c: Control) =>
   tool({
     name: "ask_user",
     description:
-      "Ställ blockerande frågor till utvecklaren. Bara frågor du inte kan avgöra själv. Högst 5 per anrop. " +
-      "Returnerar svaren, eller 'paused' – avsluta då direkt.",
+      "Ask the developer blocking questions. Only questions you cannot decide yourself. At most 5 per call. " +
+      "Returns the answers, or 'paused' – then end immediately.",
     schema: z.object({ questions: z.array(Question).min(1).max(5) }),
     handler: async ({ questions }) => {
       const used = new Set(ctx.state.answers.map((a) => a.id));
       const dup = questions.find((q) => used.has(q.id));
-      if (dup) return fail(`Frågan "${dup.id}" är redan besvarad: ${ctx.state.answers.find((a) => a.id === dup.id)?.answer}`);
+      if (dup) return fail(`The question "${dup.id}" is already answered: ${ctx.state.answers.find((a) => a.id === dup.id)?.answer}`);
       const res = await c.dialog(() => askQuestions(ctx, questions));
       if (res === "paused") {
-        c.end({ kind: "paused", reason: "Väntar på svar på frågor." });
+        c.end({ kind: "paused", reason: "Waiting for answers to questions." });
         return ok("paused");
       }
       const answered = questions.map((q) => `- ${q.id}: ${ctx.state.answers.findLast((a) => a.id === q.id)?.answer}`);
-      return ok(`Svar:\n${answered.join("\n")}`);
+      return ok(`Answers:\n${answered.join("\n")}`);
     },
   });
 
@@ -100,13 +99,13 @@ const askUser = (ctx: CwfCtx, c: Control) =>
 export function validatePlan(plan: string): string[] {
   const problems: string[] = [];
   for (const h of PLAN_HEADINGS) {
-    if (!new RegExp(`^##\\s+${h}\\s*$`, "mi").test(plan)) problems.push(`Rubriken "## ${h}" saknas.`);
+    if (!new RegExp(`^##\\s+${h}\\s*$`, "mi").test(plan)) problems.push(`The heading "## ${h}" is missing.`);
   }
-  if (plan.length > 6000) problems.push(`Planen är ${plan.length} tecken. Högst 6000 (en sida). Korta ner den.`);
+  if (plan.length > 6000) problems.push(`The plan is ${plan.length} characters. At most 6000 (one page). Shorten it.`);
   return problems;
 }
 
-/** Feedback skrivs i editorn, en punkt per rad som börjar med "-". */
+/** Feedback is written in the editor, one point per line starting with "-". */
 export function parseFeedback(text: string): string[] {
   const items: string[] = [];
   for (const line of text.split("\n")) {
@@ -119,21 +118,21 @@ export function parseFeedback(text: string): string[] {
   return items;
 }
 
-const FEEDBACK_TEMPLATE = `# Skriv din feedback, en punkt per rad som börjar med "-".
-# Rader som börjar med # ignoreras. Spara och stäng när du är klar.
+const FEEDBACK_TEMPLATE = `# Write your feedback, one point per line starting with "-".
+# Lines starting with # are ignored. Save and close when you are done.
 -
 `;
 
 const submitPlan = (ctx: CwfCtx, c: Control) =>
   tool({
     name: "submit_plan",
-    description: `Skicka planförslaget (markdown, högst en sida) till utvecklaren. Rubriker: ${PLAN_HEADINGS.join(", ")}.`,
+    description: `Submit the plan proposal (markdown, at most one page) to the developer. Headings: ${PLAN_HEADINGS.join(", ")}.`,
     schema: z.object({
       plan: z.string().min(50),
       responses: z
         .array(
           z.object({
-            feedback: z.number().int().min(1).describe("Feedbackpunktens nummer (1-baserat)"),
+            feedback: z.number().int().min(1).describe("The feedback point's number (1-based)"),
             status: z.enum(["addressed", "declined"]),
             why: z.string().min(3),
           }),
@@ -144,8 +143,8 @@ const submitPlan = (ctx: CwfCtx, c: Control) =>
       const problems = validatePlan(plan);
       const fb = ctx.state.plan?.feedback ?? [];
       const missing = fb.map((_, i) => i + 1).filter((n) => !responses.some((r) => r.feedback === n));
-      if (missing.length) problems.push(`Svar saknas för feedbackpunkt ${missing.join(", ")}.`);
-      if (problems.length) return fail(`Planen togs inte emot:\n${problems.map((p) => `- ${p}`).join("\n")}`);
+      if (missing.length) problems.push(`No response for feedback point ${missing.join(", ")}.`);
+      if (problems.length) return fail(`The plan was not accepted:\n${problems.map((p) => `- ${p}`).join("\n")}`);
 
       const version = (ctx.state.plan?.version ?? 0) + 1;
       ctx.store.write(`plan/v${version}.md`, plan);
@@ -154,24 +153,24 @@ const submitPlan = (ctx: CwfCtx, c: Control) =>
 
       const review = await c.dialog(() => reviewPlan(ctx, plan, responses.map((r) => ({ ...r, text: fb[r.feedback - 1] ?? "" }))));
       if (review === "paused") {
-        c.end({ kind: "paused", reason: "Planen väntar på granskning." });
+        c.end({ kind: "paused", reason: "The plan is waiting for review." });
         return ok("paused");
       }
       if (review === "approved") {
         c.end({ kind: "plan-approved" });
-        return ok("Planen är godkänd. Fasen är klar – gör inget mer.");
+        return ok("The plan is approved. The phase is done – do nothing more.");
       }
       const items = ctx.state.plan!.feedback;
       return ok(
-        `Utvecklaren vill ha ändringar. Revidera planen och skicka den igen med submit_plan, ` +
-          `med ett svar per punkt i responses:\n${items.map((f, i) => `${i + 1}. ${f}`).join("\n")}`,
+        `The developer wants changes. Revise the plan and submit it again with submit_plan, ` +
+          `with one answer per point in responses:\n${items.map((f, i) => `${i + 1}. ${f}`).join("\n")}`,
       );
     },
   });
 
 /**
- * Visar planen och låter utvecklaren godkänna, ge feedback eller pausa.
- * Används både av submit_plan och när cwf återupptar en plan som väntar på granskning.
+ * Shows the plan and lets the developer approve it, give feedback or pause.
+ * Used both by submit_plan and when cwf resumes a plan that is waiting for review.
  */
 export async function reviewPlan(
   ctx: CwfCtx,
@@ -180,25 +179,25 @@ export async function reviewPlan(
 ): Promise<"approved" | "feedback" | "paused"> {
   const { ui, state } = ctx;
   const version = state.plan!.version;
-  ui.heading(`Planförslag v${version}`);
+  ui.heading(`Plan proposal v${version}`);
   ui.info(plan);
   if (responses.length) {
-    ui.heading("Svar på din feedback");
+    ui.heading("Responses to your feedback");
     for (const r of responses) {
-      ui.info(`  ${r.feedback}. ${r.status === "addressed" ? "✓ Åtgärdad" : "✗ Avböjd"}: ${r.text}\n     ${r.why}`);
+      ui.info(`  ${r.feedback}. ${r.status === "addressed" ? "✓ Addressed" : "✗ Declined"}: ${r.text}\n     ${r.why}`);
     }
   }
   for (;;) {
-    const choice = await ui.select("Vad vill du göra med planen?", [
-      { value: "approve", label: "Godkänn" },
-      { value: "feedback", label: "Ge feedback" },
-      { value: "pause", label: "Pausa" },
+    const choice = await ui.select("What do you want to do with the plan?", [
+      { value: "approve", label: "Approve" },
+      { value: "feedback", label: "Give feedback" },
+      { value: "pause", label: "Pause" },
     ]);
     if (choice.kind === "timeout" || choice.value === "pause") return "paused";
     if (choice.value === "approve") {
       state.plan!.approved = true;
       ctx.store.write("plan/approved.md", plan);
-      ctx.store.log("decisions.log", { source: "user", decision: `Plan v${version} godkänd` });
+      ctx.store.log("decisions.log", { source: "user", decision: `Plan v${version} approved` });
       ctx.save();
       return "approved";
     }
@@ -206,7 +205,7 @@ export async function reviewPlan(
     if (edited.kind === "timeout") return "paused";
     const items = parseFeedback(edited.value);
     if (!items.length) {
-      ui.warn("Ingen feedback skrevs.");
+      ui.warn("No feedback was written.");
       continue;
     }
     state.plan!.feedback = items;
@@ -216,12 +215,12 @@ export async function reviewPlan(
   }
 }
 
-// ───────────────────────── Bygga ─────────────────────────
+// ───────────────────────── Build ─────────────────────────
 
 const recordDecision = (ctx: CwfCtx) =>
   tool({
     name: "record_decision",
-    description: "Logga ett beslut du fattat själv, eller en avvikelse från planen.",
+    description: "Log a decision you made yourself, or a deviation from the plan.",
     schema: z.object({
       decision: z.string().min(3),
       why: z.string().min(3),
@@ -229,64 +228,64 @@ const recordDecision = (ctx: CwfCtx) =>
     }),
     handler: async (d) => {
       ctx.store.log("decisions.log", { source: "copilot", ...d });
-      return ok("Loggat.");
+      return ok("Logged.");
     },
   });
 
 const runGateTool = (ctx: CwfCtx) =>
   tool({
     name: "run_gate",
-    description: "Kör repots kvalitetskontroller (format, bygg, test, hemligheter). Ändrar aldrig kod.",
+    description: "Run the repos' quality checks (format, build, test, secrets). Never changes code.",
     schema: z.object({ repos: z.array(z.string()).optional() }),
     handler: async ({ repos }) => {
       const list = repos?.length ? repos.filter((r) => ctx.state.repos.includes(r)) : ctx.state.repos;
       const g = await runGate(ctx.cfg, ctx.slug, list);
       ctx.store.log("logs/gate.log", { ok: g.ok, steps: g.steps.map((s) => ({ repo: s.repo, name: s.name, ok: s.ok })) });
-      return ok(`${g.ok ? "Alla kontroller gröna." : "Kontroller misslyckades."}\n${formatGate(g)}`);
+      return ok(`${g.ok ? "All checks are green." : "Checks failed."}\n${formatGate(g)}`);
     },
   });
 
-const GENERATED = /(^|\/)(bin|obj|cdk\.out|node_modules|dist|\.terraform)\//;
+const GENERATED = /(^|\/)(bin|obj|dist|node_modules|\.terraform)\//;
 
-/** Allt som måste stämma innan publicering. Returnerar problem som Copilot ska åtgärda. */
+/** Everything that must hold before publishing. Returns problems for Copilot to fix. */
 export async function checkReady(ctx: CwfCtx, prs: PrInfo[], runChecks = true): Promise<string[]> {
   const problems: string[] = [];
   const { state, cfg, slug } = ctx;
   const prRepos = new Set(prs.map((p) => p.repo));
   for (const p of prs) {
-    if (!state.repos.includes(p.repo)) problems.push(`${p.repo} ingår inte i ärendet.`);
-    for (const d of p.dependsOn) if (!prRepos.has(d)) problems.push(`${p.repo} beror på ${d}, som inte har någon PR.`);
+    if (!state.repos.includes(p.repo)) problems.push(`${p.repo} is not part of the issue.`);
+    for (const d of p.dependsOn) if (!prRepos.has(d)) problems.push(`${p.repo} depends on ${d}, which has no PR.`);
   }
   const changed: string[] = [];
   for (const repo of state.repos) {
     const wt = worktreeDir(cfg, slug, repo);
     const branch = (await git(wt, "branch", "--show-current")).trim();
     if (branch !== state.branch) {
-      problems.push(`${repo}: fel branch (${branch}), ska vara ${state.branch}.`);
+      problems.push(`${repo}: wrong branch (${branch}), should be ${state.branch}.`);
       continue;
     }
     if ((await gitTry(wt, "rev-parse", "-q", "--verify", "MERGE_HEAD")).code === 0) {
-      problems.push(`${repo}: en merge pågår. Lös konflikterna och committa.`);
+      problems.push(`${repo}: a merge is in progress. Resolve the conflicts and commit.`);
     }
-    if (await isDirty(wt)) problems.push(`${repo}: det finns ocommittade ändringar. Committa eller återställ dem med git restore.`);
-    if (!(await remoteIsAncestor(wt, state.branch))) problems.push(`${repo}: redan pushade commits har skrivits om. Gör om ändringen som en ny commit.`);
+    if (await isDirty(wt)) problems.push(`${repo}: there are uncommitted changes. Commit them or restore them with git restore.`);
+    if (!(await remoteIsAncestor(wt, state.branch))) problems.push(`${repo}: already pushed commits have been rewritten. Redo the change as a new commit.`);
     const ahead = await commitsAhead(wt);
     if (ahead > 0) changed.push(repo);
-    if (ahead > 0 && !prRepos.has(repo)) problems.push(`${repo} har ${ahead} commits men ingen PR-text.`);
-    if (ahead === 0 && prRepos.has(repo)) problems.push(`${repo} har PR-text men inga commits.`);
+    if (ahead > 0 && !prRepos.has(repo)) problems.push(`${repo} has ${ahead} commits but no PR text.`);
+    if (ahead === 0 && prRepos.has(repo)) problems.push(`${repo} has PR text but no commits.`);
     if (ahead > 0) {
       const base = await defaultBranch(wt);
       const files = (await git(wt, "diff", "--name-only", "--diff-filter=AM", `origin/${base}...HEAD`)).split("\n").filter(Boolean);
       for (const f of files) {
-        if (GENERATED.test(f)) problems.push(`${repo}: genererad fil ${f} är committad. Ta bort den och lägg mappen i .gitignore.`);
-        else if (existsSync(join(wt, f)) && statSync(join(wt, f)).size > 5_000_000) problems.push(`${repo}: ${f} är större än 5 MB.`);
+        if (GENERATED.test(f)) problems.push(`${repo}: generated file ${f} is committed. Remove it and add the folder to .gitignore.`);
+        else if (existsSync(join(wt, f)) && statSync(join(wt, f)).size > 5_000_000) problems.push(`${repo}: ${f} is larger than 5 MB.`);
       }
     }
   }
-  if (!changed.length) problems.push("Inga commits i något repo. Använd report_no_change om ingen ändring behövs.");
+  if (!changed.length) problems.push("No commits in any repo. Use report_no_change if no change is needed.");
   if (!problems.length && runChecks) {
     const g = await runGate(cfg, slug, changed);
-    if (!g.ok) problems.push(`Kontrollerna är inte gröna:\n${formatGate(g)}`);
+    if (!g.ok) problems.push(`The checks are not green:\n${formatGate(g)}`);
   }
   return problems;
 }
@@ -295,36 +294,36 @@ const readyForPr = (ctx: CwfCtx, c: Control) =>
   tool({
     name: "ready_for_pr",
     description:
-      "Signalera att arbetet är klart. Ange PR-titel och PR-text för varje repo med commits, " +
-      "och dependsOn om en PR måste mergas efter en annan. cwf kontrollerar och kör gate innan utvecklaren tillfrågas.",
+      "Signal that the work is done. Give a PR title and PR text for every repo with commits, " +
+      "and dependsOn if one PR must be merged after another. cwf checks and runs the gate before the developer is asked.",
     schema: z.object({ prs: z.array(PrInfo).min(1) }),
     handler: async ({ prs }) => {
       const problems = await checkReady(ctx, prs);
-      if (problems.length) return fail(`Inte redo:\n${problems.map((p) => `- ${p}`).join("\n")}\nÅtgärda och anropa igen.`);
+      if (problems.length) return fail(`Not ready:\n${problems.map((p) => `- ${p}`).join("\n")}\nFix it and call again.`);
       c.end({ kind: "ready", prs });
-      return ok("Klart. cwf tar över publiceringen – gör inget mer.");
+      return ok("Done. cwf takes over publishing – do nothing more.");
     },
   });
 
 const reportBlocked = (c: Control) =>
   tool({
     name: "report_blocked",
-    description: "Använd när arbetet inte kan fortsätta, t.ex. ett krav som motsäger sig självt eller något som saknas helt.",
+    description: "Use when the work cannot continue, e.g. a requirement that contradicts itself or something that is missing entirely.",
     schema: z.object({ reason: z.string().min(10) }),
     handler: async ({ reason }) => {
       c.end({ kind: "blocked", reason });
-      return ok("Noterat. Avsluta nu.");
+      return ok("Noted. End now.");
     },
   });
 
 const reportNoChange = (c: Control) =>
   tool({
     name: "report_no_change",
-    description: "Använd när ärendet inte kräver någon kodändring. Förklara varför.",
+    description: "Use when the issue requires no code change. Explain why.",
     schema: z.object({ reason: z.string().min(10) }),
     handler: async ({ reason }) => {
       c.end({ kind: "no-change", reason });
-      return ok("Noterat. Avsluta nu.");
+      return ok("Noted. End now.");
     },
   });
 

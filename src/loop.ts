@@ -46,14 +46,14 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
   const save = () => store.save(state);
 
   try {
-    // ── 1. Förbereda ──────────────────────────────────────────
+    // ── 1. Prepare ────────────────────────────────────────────
     const fresh = !store.exists();
     let issue: Issue | undefined;
     try {
       issue = await getIssue(cfg, key);
     } catch (e) {
       if (fresh) throw e;
-      ui.warn(`Kunde inte hämta ärendet (${(e as Error).message}). Fortsätter med sparad kopia.`);
+      ui.warn(`Could not fetch the issue (${(e as Error).message}). Continuing with the saved copy.`);
     }
 
     if (fresh) {
@@ -64,12 +64,12 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
         prs: [], publish: {}, aic: { total: 0 },
       };
       ui.heading(`${key}: ${issue!.summary}`);
-      ui.info(`Repon: ${repos.join(", ")} · branch ${state.branch}`);
+      ui.info(`Repos: ${repos.join(", ")} · branch ${state.branch}`);
     } else {
       state = store.load();
-      ui.heading(`${key} – fortsätter (${phaseName(state.phase)})`);
+      ui.heading(`${key} – continuing (${phaseName(state.phase)})`);
       if (args.repos.length && args.repos.join() !== state.repos.join()) {
-        ui.warn(`Ärendet använder redan ${state.repos.join(", ")}. Angivna repon ignoreras.`);
+        ui.warn(`The issue already uses ${state.repos.join(", ")}. The repos given are ignored.`);
       }
     }
     ctx = { cfg, ui, store, state, slug, save };
@@ -77,16 +77,16 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
     if (issue) {
       store.write("issue.json", JSON.stringify(issue.raw, null, 2) + "\n");
       if (!fresh && issue.hash !== state.issueHash && state.phase !== "done") {
-        const r = await ui.select("Ärendet har ändrats i Jira sedan förra körningen. Vad vill du göra?", [
-          { value: "replan", label: "Gör om planen utifrån det nya ärendet" },
-          { value: "continue", label: "Fortsätt som planerat" },
-          { value: "pause", label: "Pausa" },
+        const r = await ui.select("The issue has changed in Jira since the last run. What do you want to do?", [
+          { value: "replan", label: "Redo the plan based on the new issue" },
+          { value: "continue", label: "Continue as planned" },
+          { value: "pause", label: "Pause" },
         ]);
         if (r.kind === "timeout" || r.value === "pause") return EXIT.paused;
         if (r.value === "replan") {
           state.phase = "plan";
           state.plan = undefined;
-          state.notes.push({ at: now(), text: "Ärendet har ändrats i Jira. Läs om det och gör en ny plan." });
+          state.notes.push({ at: now(), text: "The issue has changed in Jira. Read it again and make a new plan." });
         }
       }
       state.issueHash = issue.hash;
@@ -96,8 +96,8 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
 
     if (state.phase === "blocked") {
       if (!args.note) {
-        ui.warn(`Blockerat: ${state.blockedReason}`);
-        ui.info(`Lös det och kör igen med en anteckning: cwf run ${key} -m "..."`);
+        ui.warn(`Blocked: ${state.blockedReason}`);
+        ui.info(`Resolve it and run again with a note: cwf run ${key} -m "..."`);
         return EXIT.blocked;
       }
       state.phase = state.plan?.approved ? "build" : "plan";
@@ -115,9 +115,9 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
       }
     }
 
-    // ── Obesvarade frågor från förra gången ──────────────────
+    // ── Unanswered questions from last time ──────────────────
     if (state.pendingQuestions.length) {
-      ui.info(`Du har ${state.pendingQuestions.length} obesvarade frågor från förra gången.`);
+      ui.info(`You have ${state.pendingQuestions.length} unanswered questions from last time.`);
       if ((await askQuestions(ctx, [...state.pendingQuestions])) === "paused") return EXIT.paused;
     }
 
@@ -126,9 +126,9 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
     const extra: string[] = [];
 
     for (;;) {
-      // ── 2. Förstå och planera ────────────────────────────────
+      // ── 2. Understand and plan ───────────────────────────────
       if (state.phase === "plan") {
-        // En plan som väntar på granskning visas direkt, utan ny session.
+        // A plan waiting for review is shown directly, without a new session.
         const waiting = currentPlan(store, state);
         if (state.plan && !state.plan.approved && !state.plan.feedback.length && waiting) {
           const r = await reviewPlan(ctx, waiting);
@@ -139,7 +139,7 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
             continue;
           }
         }
-        ui.heading(state.plan?.feedback.length ? "Copilot reviderar planen…" : "Copilot läser ärendet och tar fram en plan…");
+        ui.heading(state.plan?.feedback.length ? "Copilot is revising the plan…" : "Copilot is reading the issue and drafting a plan…");
         const end = await runSession(
           agent,
           { model: cfg.models.main, researcherModel: cfg.models.researcher, cwd: dir, systemPrompt: PLAN_SYSTEM, policy: policyFor("plan") },
@@ -158,22 +158,22 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
           ui.warn(end.reason);
           return EXIT.paused;
         }
-        throw new Error(`Oväntat slut på planfasen: ${end.kind}`);
+        throw new Error(`Unexpected end of the plan phase: ${end.kind}`);
       }
 
-      // ── 3. Bygga ─────────────────────────────────────────────
+      // ── 3. Build ─────────────────────────────────────────────
       if (state.phase === "build") {
         if (state.buildRounds >= cfg.limits.buildRounds) {
-          return block(ctx, `Alla ${cfg.limits.buildRounds} Bygga-varv är förbrukade utan att arbetet blev klart.`);
+          return block(ctx, `All ${cfg.limits.buildRounds} build rounds are used up without the work being done.`);
         }
         for (const repo of state.repos) {
           const m = await mergeDefault(join(dir, repo));
-          if (m === "conflict") extra.push(`${repo}: merge av standardbranchen gav konflikter. Lös dem först.`);
-          if (m === "merged") ui.info(`${repo}: standardbranchen inmergad.`);
+          if (m === "conflict") extra.push(`${repo}: merging the default branch gave conflicts. Resolve them first.`);
+          if (m === "merged") ui.info(`${repo}: default branch merged in.`);
         }
         state.buildRounds++;
         save();
-        ui.heading(`Copilot bygger (varv ${state.buildRounds} av ${cfg.limits.buildRounds})…`);
+        ui.heading(`Copilot is building (round ${state.buildRounds} of ${cfg.limits.buildRounds})…`);
         const plan = store.read("plan/approved.md") ?? "";
         const end = await runSession(
           agent,
@@ -194,57 +194,57 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
           continue;
         }
         if (end.kind === "no-change") {
-          ui.heading("Ingen ändring behövs");
+          ui.heading("No change needed");
           ui.info(end.reason);
           state.phase = "done";
           save();
           return EXIT.done;
         }
         if (end.kind === "gave-up") {
-          ui.warn(`${end.reason} Startar ett nytt varv.`);
-          extra.push(`Förra varvet avbröts: ${end.reason}`);
+          ui.warn(`${end.reason} Starting a new round.`);
+          extra.push(`The previous round was aborted: ${end.reason}`);
           continue;
         }
-        throw new Error(`Oväntat slut på Bygga: ${end.kind}`);
+        throw new Error(`Unexpected end of the build phase: ${end.kind}`);
       }
 
-      // ── 4–5. Publicera ───────────────────────────────────────
+      // ── 4–5. Publish ─────────────────────────────────────────
       if (state.phase === "publish") {
         for (const repo of state.repos) {
           const m = await mergeDefault(join(dir, repo));
-          if (m === "conflict") extra.push(`${repo}: merge av standardbranchen gav konflikter. Lös dem och anropa ready_for_pr igen.`);
+          if (m === "conflict") extra.push(`${repo}: merging the default branch gave conflicts. Resolve them and call ready_for_pr again.`);
         }
         const problems = await checkReady(ctx, state.prs);
         if (problems.length) {
-          ui.warn("Inte längre redo att publicera – tillbaka till Bygga.");
-          extra.push(`Inför publicering hittades problem:\n${problems.map((p) => `- ${p}`).join("\n")}`);
+          ui.warn("No longer ready to publish – back to build.");
+          extra.push(`Problems found before publishing:\n${problems.map((p) => `- ${p}`).join("\n")}`);
           state.phase = "build";
           save();
           continue;
         }
         if (args.noPublish) {
-          ui.info("Klart att publicera. Kör utan --no-publish för att publicera.");
+          ui.info("Ready to publish. Run without --no-publish to publish.");
           return EXIT.paused;
         }
         const mode = await askPublish(ctx, state.prs);
         if (!mode) return EXIT.paused;
-        ui.heading("Publicerar…");
+        ui.heading("Publishing…");
         await publish(ctx, state.prs, mode);
         state.phase = "done";
         save();
         return EXIT.done;
       }
 
-      // ── Klart sedan tidigare ─────────────────────────────────
+      // ── Already done earlier ─────────────────────────────────
       if (state.phase === "done") {
         const drafts = Object.entries(state.publish).filter(([, p]) => p.prUrl && !p.ready);
         if (!drafts.length) {
-          ui.info("Ärendet är klart. Kör cwf clean när PR:erna är mergade.");
+          ui.info("The issue is done. Run cwf clean when the PRs are merged.");
           return EXIT.done;
         }
-        const r = await ui.select(`${drafts.length} PR:er är drafts. Markera dem som redo för granskning?`, [
-          { value: "ready", label: "Ja, redo för granskning" },
-          { value: "no", label: "Nej" },
+        const r = await ui.select(`${drafts.length} PRs are drafts. Mark them as ready for review?`, [
+          { value: "ready", label: "Yes, ready for review" },
+          { value: "no", label: "No" },
         ]);
         if (r.kind === "ok" && r.value === "ready") await publish(ctx, state.prs, "ready");
         return EXIT.done;
@@ -255,28 +255,28 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
       state!.aic.total = round(state!.aic.total + budget.spentAic);
       store.save(state!);
       store.log("usage.log", { aic: round(budget.spentAic), total: state!.aic.total });
-      ui.info(`\nAI-krediter: ${round(budget.spentAic)} denna körning, ${state!.aic.total} totalt för ärendet.`);
+      ui.info(`\nAI credits: ${round(budget.spentAic)} this run, ${state!.aic.total} total for the issue.`);
     }
     release();
   }
 }
 
-/** Utfall som hanteras likadant i alla faser. "retry" = kör samma fas igen. */
+/** Outcomes handled the same way in every phase. "retry" = run the same phase again. */
 async function handleCommon(end: End, ctx: CwfCtx, budget: Budget): Promise<ExitCode | "retry" | undefined> {
   const { ui } = ctx;
   switch (end.kind) {
     case "paused":
-      ui.info(`\nPausad: ${end.reason}\nFortsätt med: cwf run ${ctx.state.key}`);
+      ui.info(`\nPaused: ${end.reason}\nContinue with: cwf run ${ctx.state.key}`);
       return EXIT.paused;
     case "hung":
-      ui.warn("Copilot svarade inte på länge och stoppades. Kör cwf run igen för att fortsätta.");
+      ui.warn("Copilot did not respond for too long and was stopped. Run cwf run again to continue.");
       return EXIT.paused;
     case "blocked":
       return block(ctx, end.reason);
     case "budget": {
-      const r = await ui.select(`AI-kreditaket (${budget.limitAic}) är nått. Vad vill du göra?`, [
-        { value: "raise", label: "Höj taket med 500 och fortsätt" },
-        { value: "pause", label: "Pausa" },
+      const r = await ui.select(`The AI-credit cap (${budget.limitAic}) has been reached. What do you want to do?`, [
+        { value: "raise", label: "Raise the cap by 500 and continue" },
+        { value: "pause", label: "Pause" },
       ]);
       if (r.kind === "ok" && r.value === "raise") {
         budget.limitAic += 500;
@@ -293,9 +293,9 @@ function block(ctx: CwfCtx, reason: string): ExitCode {
   ctx.state.phase = "blocked";
   ctx.state.blockedReason = reason;
   ctx.save();
-  ctx.ui.heading("Blockerat");
+  ctx.ui.heading("Blocked");
   ctx.ui.info(reason);
-  ctx.ui.info(`När det är löst: cwf run ${ctx.state.key} -m "vad som ändrats"`);
+  ctx.ui.info(`When it is resolved: cwf run ${ctx.state.key} -m "what changed"`);
   return EXIT.blocked;
 }
 
@@ -304,6 +304,6 @@ function currentPlan(store: Store, state: State) {
 }
 
 const phaseName = (p: State["phase"]) =>
-  ({ plan: "planering", build: "bygga", publish: "publicering", done: "klart", blocked: "blockerat" })[p];
+  ({ plan: "planning", build: "building", publish: "publishing", done: "done", blocked: "blocked" })[p];
 const now = () => new Date().toISOString();
 const round = (n: number) => Math.round(n * 100) / 100;

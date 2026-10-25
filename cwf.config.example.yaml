@@ -1,4 +1,4 @@
-# Kopiera till ~/.config/cwf/config.yaml (eller ange sökvägen i CWF_CONFIG).
+# Copy to ~/.config/cwf/config.yaml (or point CWF_CONFIG at the file).
 
 projectsDir: ~/projects
 
@@ -14,27 +14,27 @@ github:
 models:
   main: gpt-6.1-sol
   researcher: gpt-6-luna
-  # USD per miljon tokens, för live-uppskattning av AI-krediter.
+  # USD per million tokens, for the live estimate of AI credits.
   prices:
     gpt-6.1-sol: { input: 2, output: 10 }
-    gpt-6-luna: { input: 0.5, output: 2 }   # VERIFIERA mot aktuell prislista
+    gpt-6-luna: { input: 0.5, output: 2 }   # VERIFY against the current price list
 
 limits:
-  aicPerRun: 1000        # mjukt tak per körning, cwf frågar om höjning
-  buildRounds: 4         # Bygga-varv innan ärendet blockeras
-  idleTimeoutMin: 10     # tystnad innan en session räknas som hängd
-  waitForUserMin: 20     # hur länge en fråga får stå obesvarad innan cwf pausar
+  aicPerRun: 1000        # soft cap per run, cwf asks before raising it
+  buildRounds: 4         # build rounds before the issue is blocked
+  idleTimeoutMin: 10     # silence before a session counts as hung
+  waitForUserMin: 20     # how long a question may stay unanswered before cwf pauses
 
 publish:
-  default: draft         # draft | ready (förvalt alternativ vid publicering)
-  reviewersOnReady: []   # t.ex. [acme/vfs-team]
+  default: draft         # draft | ready (the default choice when publishing)
+  reviewersOnReady: []   # e.g. [acme/vfs-team]
 
 clean:
   staleDays: 14
 
-# Regler per repo. Ett repo utan egna regler använder defaults.
-# gate körs i ordning och stannar vid första fel. cwf ändrar aldrig kod:
-# `fix` skickas till Copilot som förslag. gitleaks körs alltid sist om det finns.
+# Rules per repo. A repo without its own rules uses the defaults.
+# Gate steps run in order and stop at the first failure. cwf never changes code itself:
+# `fix` is only sent to Copilot as a suggestion. gitleaks always runs last, if it is installed.
 repos:
   defaults:
     setup: []
@@ -52,10 +52,7 @@ repos:
     setup:
       - npm ci
     gate:
-      - name: bygg
+      - name: build
         run: npm run build
       - name: test
         run: npm test
-      - name: cdk synth
-        run: npx cdk synth --quiet
-        when: cdk.json

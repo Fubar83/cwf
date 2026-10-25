@@ -1,7 +1,7 @@
 import type { Agent, AgentEvent, SessionSpec, ToolDef } from "./agent/types.ts";
 import type { PrInfo } from "./state.ts";
 
-/** Hur en session slutade. Bestäms alltid av cwf, aldrig av att modellen "säger" att den är klar. */
+/** How a session ended. Always decided by cwf, never by the model "saying" it is done. */
 export type End =
   | { kind: "plan-approved" }
   | { kind: "ready"; prs: PrInfo[] }
@@ -12,15 +12,15 @@ export type End =
   | { kind: "hung" }
   | { kind: "gave-up"; reason: string };
 
-/** Det verktygen får för att styra sessionen. */
+/** What a tool may use to steer the session. */
 export interface Control {
-  /** Kör en dialog med användaren. Vakten för hängningar står still under tiden. */
+  /** Runs a dialog with the user. The hang watchdog stands still meanwhile. */
   dialog<T>(fn: () => Promise<T>): Promise<T>;
-  /** Avslutar sessionen efter att verktyget svarat. */
+  /** Ends the session after the tool has replied. */
   end(e: End): void;
 }
 
-/** AIC räknas i nano-AIU (1 AIC = 1e9) med BigInt för att undvika avrundningsfel. */
+/** AIC is counted in nano-AIU (1 AIC = 1e9) using BigInt to avoid rounding errors. */
 export class Budget {
   spentNano = 0n;
   constructor(
@@ -28,7 +28,7 @@ export class Budget {
     private prices: Record<string, { input: number; output: number }>,
   ) {}
 
-  /** USD per miljon tokens → nano-AIU. 1 USD = 100 AIC. */
+  /** USD per million tokens → nano-AIU. 1 USD = 100 AIC. */
   add(model: string, inputTokens: number, outputTokens: number) {
     const p = this.prices[model];
     if (!p) return;
@@ -49,14 +49,14 @@ export interface RunOptions {
   prompt: string;
   budget: Budget;
   idleMs: number;
-  /** Max antal påminnelser om modellen slutar utan att anropa ett avslutande verktyg. */
+  /** Max number of reminders when the model stops without calling an ending tool. */
   maxNudges?: number;
   log?: (entry: Record<string, unknown>) => void;
 }
 
 /**
- * Kör en session tills ett verktyg avslutar den, vakten slår till eller budgeten tar slut.
- * Verktygen byggs med `makeTools(control)` så att de kan öppna dialoger och avsluta.
+ * Runs a session until a tool ends it, the watchdog fires, or the budget runs out.
+ * The tools are built with `makeTools(control)` so they can open dialogs and end the session.
  */
 export async function runSession(
   agent: Agent,
@@ -110,18 +110,18 @@ export async function runSession(
         break;
       case "error":
         opts.log?.({ event: "error", message: e.message });
-        endOnce({ kind: "gave-up", reason: `Copilot rapporterade ett fel: ${e.message}` });
+        endOnce({ kind: "gave-up", reason: `Copilot reported an error: ${e.message}` });
         break;
       case "idle":
         if (nudges < maxNudges) {
           nudges++;
           opts.log?.({ event: "nudge", n: nudges });
           void session.send(
-            "Du har inte avslutat fasen. Avsluta genom att anropa ett av de avslutande verktygen " +
-              "(submit_plan, ready_for_pr, report_no_change eller report_blocked). Fortsätt annars arbetet.",
+            "You have not finished the phase. End it by calling one of the ending tools " +
+              "(submit_plan, ready_for_pr, report_no_change or report_blocked). Otherwise keep working.",
           );
         } else {
-          endOnce({ kind: "gave-up", reason: "Copilot slutade utan att anropa ett avslutande verktyg." });
+          endOnce({ kind: "gave-up", reason: "Copilot stopped without calling an ending tool." });
         }
         break;
     }
@@ -132,10 +132,10 @@ export async function runSession(
   const result = await done;
   if (timer) clearTimeout(timer);
 
-  // Pausen och avslutet är cwf:s beslut: sessionen stoppas oavsett vad modellen vill.
+  // Pausing and ending are cwf's decisions: the session is stopped whatever the model wants.
   await session.abort().catch(() => {});
   const total = await session.close().catch(() => undefined);
-  // SDK:ns totalsumma för sessionen är sanningen när den finns.
+  // The SDK's total for the session is the truth when it exists.
   if (total !== undefined) opts.budget.spentNano = startNano + total;
   opts.log?.({ event: "end", kind: result.kind, aic: opts.budget.spentAic });
   return result;

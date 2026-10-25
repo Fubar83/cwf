@@ -17,7 +17,7 @@ const cfg = ConfigSchema.parse({
   },
 });
 
-test("config: standardvärden och regler per repo", () => {
+test("config: defaults and per-repo rules", () => {
   assert.equal(cfg.models.main, "gpt-6.1-sol");
   assert.equal(cfg.limits.aicPerRun, 1000);
   assert.deepEqual(rulesFor(cfg, "api").setup, ["dotnet restore"]);
@@ -25,43 +25,44 @@ test("config: standardvärden och regler per repo", () => {
   assert.deepEqual(rulesFor(cfg, "infra").setup, ["npm ci"]);
 });
 
-test("config: nyckel tolkas skiftlägesokänsligt", () => {
+test("config: the key is parsed case-insensitively", () => {
   assert.equal(resolveIssue(cfg, "vfs-1350").key, "VFS-1350");
   assert.equal(resolveIssue(cfg, "VFS-1350").slug, "vfs-1350");
-  assert.throws(() => resolveIssue(cfg, "ABC-1"), /finns inte/);
-  assert.throws(() => resolveIssue(cfg, "hej"), /Jira-nyckel/);
+  assert.throws(() => resolveIssue(cfg, "ABC-1"), /not in the settings/);
+  assert.throws(() => resolveIssue(cfg, "hello"), /Jira key/);
 });
 
-test("slugify: svenska tecken och längd", () => {
-  assert.equal(slugify("Lägg till CSV-export för fakturor"), "lagg-till-csv-export-for-fakturor");
+test("slugify: diacritics and length", () => {
+  assert.equal(slugify("Add CSV export for invoices"), "add-csv-export-for-invoices");
+  assert.equal(slugify("Förändring och åtgärd"), "forandring-och-atgard");
   assert.ok(slugify("a".repeat(100)).length <= 40);
-  assert.equal(slugify("!!!"), "arende");
+  assert.equal(slugify("!!!"), "issue");
 });
 
-test("plan: rubriker och längd kontrolleras", () => {
+test("plan: headings and length are checked", () => {
   assert.deepEqual(validatePlan(validPlan()), []);
-  assert.match(validatePlan("## Angreppssätt\nx").join(), /Tolkade acceptanskriterier/);
+  assert.match(validatePlan("## Approach\nx").join(), /Interpreted acceptance criteria/);
   assert.match(validatePlan(validPlan("x".repeat(7000))).join(), /6000/);
 });
 
-test("feedback: en punkt per rad, kommentarer ignoreras", () => {
-  const items = parseFeedback("# hjälptext\n- Första\n  fortsätter\n- Andra\n");
-  assert.deepEqual(items, ["Första fortsätter", "Andra"]);
-  assert.deepEqual(parseFeedback("# bara hjälptext\n-\n"), []);
+test("feedback: one point per line, comments ignored", () => {
+  const items = parseFeedback("# help text\n- First\n  continued\n- Second\n");
+  assert.deepEqual(items, ["First continued", "Second"]);
+  assert.deepEqual(parseFeedback("# only help text\n-\n"), []);
 });
 
-test("PR-text: bara cwf:s del ersätts", () => {
-  const first = mergeBody(undefined, "Ny text");
-  const edited = `Handskrivet först\n${first}\nHandskrivet sist`;
-  const updated = mergeBody(edited, "Uppdaterad");
-  assert.match(updated, /^Handskrivet först/);
-  assert.match(updated, /Handskrivet sist$/);
-  assert.match(updated, /Uppdaterad/);
-  assert.doesNotMatch(updated, /Ny text/);
+test("PR text: only cwf's part is replaced", () => {
+  const first = mergeBody(undefined, "New text");
+  const edited = `Handwritten first\n${first}\nHandwritten last`;
+  const updated = mergeBody(edited, "Updated");
+  assert.match(updated, /^Handwritten first/);
+  assert.match(updated, /Handwritten last$/);
+  assert.match(updated, /Updated/);
+  assert.doesNotMatch(updated, /New text/);
   assert.ok(mergeBody(undefined, "x".repeat(70_000)).length <= 60_000);
 });
 
-test("PR-ordning följer beroenden", () => {
+test("PR order follows dependencies", () => {
   const order = orderByDependencies([
     { repo: "web", title: "", body: "", dependsOn: ["api"] },
     { repo: "api", title: "", body: "", dependsOn: ["infra"] },
@@ -76,7 +77,7 @@ test("PR-ordning följer beroenden", () => {
   );
 });
 
-test("AIC: GPT-6.1 Sol kostar 200 AIC per miljon in och 1000 per miljon ut", () => {
+test("AIC: GPT-6.1 Sol costs 200 AIC per million input and 1000 per million output", () => {
   const b = new Budget(1000, { "gpt-6.1-sol": { input: 2, output: 10 } });
   b.add("gpt-6.1-sol", 1_000_000, 0);
   assert.equal(b.spentAic, 200);

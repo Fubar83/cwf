@@ -1,113 +1,110 @@
 # cwf
 
-Tar ett Jira-ärende till en pull request med GitHub Copilot, i devcontainer utan AWS-åtkomst.
+Takes a Jira issue to a pull request with GitHub Copilot.
 
-cwf är ett tunt skal. Copilot fattar innehållsbesluten (plan, kod, tester, commits, PR-text)
-utifrån varje repos `AGENTS.md`. cwf äger arbetsytan, flödet, kontrollerna, publiceringen och skydden.
+cwf is a thin orchestrator. Copilot makes the content decisions (plan, code, tests, commits, PR text)
+based on each repo's `AGENTS.md`. cwf owns the workspace, the flow, the checks, publishing and the guardrails.
 
-## Kom igång
+## Getting started
 
 ```bash
-npm install                 # lås @github/copilot-sdk till en version först, se nedan
-cp cwf.config.example.yaml ~/.config/cwf/config.yaml   # fyll i
-ln -s "$PWD/bin/cwf" ~/.local/bin/cwf
+pnpm run global                                       # pnpm install + pnpm add --global .
+cp cwf.config.example.yaml ~/.config/cwf/config.yaml  # then fill it in
 cwf run VFS-1350
 ```
 
-Eller med pnpm, så `cwf` finns globalt från vilken mapp som helst:
+`pnpm run global` installs `cwf` globally, so it works from any folder. If pnpm's global bin
+directory is not on your PATH yet, run `pnpm setup` once and open a new terminal.
 
-```bash
-pnpm run global             # pnpm install + pnpm add --global
-cwf run VFS-1350
-```
+Requirements: Node 22+, `git`, `gh` (logged in), `copilot` (Copilot CLI, logged in), `twg` (logged in).
 
-Krav: Node 22+, `git`, `gh` (inloggad), `copilot` (Copilot CLI, inloggad), `twg` (inloggad).
+## Commands
 
-## Kommandon
-
-| Kommando | Vad det gör |
+| Command | What it does |
 |---|---|
-| `cwf run <NYCKEL> [repon…]` | Startar eller fortsätter ett ärende. Utan repon används projektets repon från inställningarna. |
-| `cwf run <NYCKEL> -m "text"` | Lägger till en anteckning till Copilot. Krävs för att fortsätta ett blockerat ärende. |
-| `cwf run <NYCKEL> --no-publish` | Stannar innan publicering. |
-| `cwf run <NYCKEL> --aic-limit 500` | AI-kreditak för just den körningen. |
-| `cwf clean` | Tar bort ärenden vars PR:er är mergade eller stängda. Arkiverar state och beslut. |
+| `cwf run <KEY> [repos…]` | Starts or continues an issue. Without repos, the project's repos from the settings are used. |
+| `cwf run <KEY> -m "text"` | Adds a note for Copilot. Required to continue a blocked issue. |
+| `cwf run <KEY> --no-publish` | Stops before publishing. |
+| `cwf run <KEY> --aic-limit 500` | AI-credit cap for this run only. |
+| `cwf clean` | Removes issues whose PRs are merged or closed. Archives the state and decisions. |
 
-Exitkoder: `0` klart · `10` pausad · `20` blockerad · `1` fel.
+Exit codes: `0` done · `10` paused · `20` blocked · `1` error.
 
-## Flödet
+## The flow
 
-1. **Förbereda** (cwf): förkontroll, lås, en git worktree per repo på branch `vfs-1350-kort-titel`,
-   merge av standardbranchen, kontroll om ärendet ändrats sedan förra körningen.
-2. **Planera** (Copilot, läsläge): läser ärendet och de Confluence-sidor som är länkade i det,
-   ställer blockerande frågor och föreslår en plan på högst en sida.
-   Du **godkänner**, ger **feedback** i editorn (Copilot måste svara på varje punkt) eller **pausar**.
-3. **Bygga** (Copilot, skrivläge): commit per uppgift, kör kontrollerna tills allt är grönt,
-   anropar `ready_for_pr`. cwf kontrollerar att allt är committat och kör kontrollerna själv.
-4. **Publicera**: du ser commits, ändrade rader och avvikelser från planen och väljer
-   **draft**, **redo för granskning** eller **pausa**. cwf pushar och skapar PR:erna i beroendeordning.
+1. **Prepare** (cwf): preflight checks, lock, one git worktree per repo on the branch `vfs-1350-short-title`,
+   merge of the default branch, and a check whether the issue changed since the last run.
+2. **Plan** (Copilot, read-only): reads the issue and the Confluence pages linked from it,
+   asks blocking questions and proposes a plan of at most one page.
+   You **approve**, give **feedback** in your editor (Copilot must answer every point) or **pause**.
+3. **Build** (Copilot, write mode): one commit per task, runs the checks until everything is green,
+   calls `ready_for_pr`. cwf verifies that everything is committed and runs the checks itself.
+4. **Publish**: you see the commits, the changed lines and deviations from the plan, and choose
+   **draft**, **ready for review** or **pause**. cwf pushes and creates the PRs in dependency order.
 
-Pausar du, eller svarar inte på en fråga inom `waitForUserMin`, sparas allt. Nästa `cwf run`
-börjar med de obesvarade frågorna. Copilot-sessioner återupptas aldrig: filerna i `.cwf/` är sanningen.
+If you pause, or do not answer a question within `waitForUserMin`, everything is saved. The next
+`cwf run` starts with the unanswered questions. Copilot sessions are never resumed: the files in `.cwf/` are the truth.
 
-## Katalogstruktur
+## Directory layout
 
 ```
 projects/
-├── vfs-api/                  main-checkout
+├── vfs-api/                  main checkout
 ├── vfs-1350/
-│   ├── .cwf/                  cwf:s tillstånd (Copilot får inte skriva här)
-│   │   ├── state.json        fas, svar, plan, publicering
-│   │   ├── issue.json        ärendet från twg
-│   │   ├── plan/v1.md …      planversioner, feedback och approved.md
-│   │   ├── decisions.log     beslut och avvikelser
-│   │   ├── usage.log         AI-krediter per körning
+│   ├── .cwf/                 cwf's state (Copilot may not write here)
+│   │   ├── state.json        phase, answers, plan, publishing
+│   │   ├── issue.json        the issue from twg
+│   │   ├── plan/v1.md …      plan versions, feedback and approved.md
+│   │   ├── decisions.log     decisions and deviations
+│   │   ├── usage.log         AI credits per run
 │   │   └── logs/
-│   └── vfs-api/              worktree på ärendets branch
-└── .cwf-archive/              arkiverade ärenden efter cwf clean
+│   └── vfs-api/              worktree on the issue's branch
+└── .cwf-archive/             issues archived by cwf clean
 ```
 
-## Skydd
+## Guardrails
 
-- **Policy** för varje verktygsanrop (`src/policy.ts`), både i `onPreToolUse` och `onPermissionRequest`.
-  Planläget tillåter bara läsande kommandon. Alltid nekat: `git push`, `rebase`, `reset --hard`,
-  `checkout`, `stash`, `--no-verify`, skrivande `gh`, `gh api`, `cdk deploy/destroy`, `aws`, `curl`,
-  skrivande `twg`, hemligheter, kommandosubstitution, skrivning i `.cwf/` eller utanför ärendet.
-- **Varningar** till Copilot vid `@ts-ignore`, cdk-nag-undantag, överhoppade tester m.m.
-- **Vakt mot hängningar** som står still medan cwf väntar på dig.
-- **AI-kreditak** per körning. När det nås frågar cwf om höjning.
-- **Merge, aldrig rebase eller force push.** Konflikter löses i nästa Bygga-varv.
-- **Inga dubbletter**: varje publiceringssteg sparas; PR-texten uppdateras bara mellan
-  `<!-- cwf:start -->` och `<!-- cwf:end -->`.
-- Inför publicering: ingen ocommittad kod, ingen pågående merge, inga omskrivna pushade commits,
-  inga genererade filer (`bin/`, `obj/`, `cdk.out/`, `node_modules/`) eller filer över 5 MB.
+- **YOLO permissions.** Copilot runs with permission requests auto-approved, so an unattended run never
+  stalls waiting for a human. The guardrails below still apply, because they run before every tool call.
+- **Policy** for every built-in tool call (`src/policy.ts`), enforced in `onPreToolUse`.
+  The plan phase only allows read-only commands. Always denied: `git push`, `rebase`, `reset --hard`,
+  `checkout`, `stash`, `--no-verify`, writing `gh` commands, `gh api`, network tools (`curl`, `wget`, `ssh`, …),
+  writing `twg`, secrets, command substitution, and writes to `.cwf/` or outside the issue.
+- **Warnings** to Copilot about `@ts-ignore`, skipped tests, suppressed warnings, and similar.
+- **Hang watchdog** that stops a session that goes silent while cwf waits for you.
+- **AI-credit cap** per run. When it is reached, cwf asks whether to raise it.
+- **Merge, never rebase or force push.** Conflicts are resolved in the next build round.
+- **No duplicates**: every publish step is saved; the PR text is only updated between
+  `<!-- cwf:start -->` and `<!-- cwf:end -->`.
+- Before publishing: no uncommitted code, no merge in progress, no rewritten pushed commits,
+  no generated files (`bin/`, `obj/`, `dist/`, `node_modules/`) and no files over 5 MB.
 
-## Tester
+## Tests
 
 ```bash
-npm run typecheck
-npm test
+pnpm run typecheck
+pnpm test
 ```
 
-Testerna kör hela flödet med `FakeAgent` mot riktiga lokala git-repon och ett låtsas-`gh`,
-utan nätverk och utan kostnad.
+The tests run the whole flow with `FakeAgent` against real local git repos and a fake `gh`,
+without network and without cost.
 
-## Att verifiera innan första riktiga körningen (etapp 0)
+## Before the first real run
 
-SDK-adaptern (`src/agent/copilot.ts`) är skriven mot dokumentationen utan att ha kunnat köras.
-Ställen att kontrollera är märkta `VERIFIERA`.
+The SDK adapter (`src/agent/copilot.ts`) was written against the documentation and has not been run against
+the real SDK yet. Places to check are marked `VERIFY`.
 
-1. Lås `@github/copilot-sdk` och Copilot CLI till exakta versioner i `package.json`.
-2. Hooks: att `onPreToolUse` får `toolName`/`toolArgs` och att verktygsnamnen för skal och
-   filskrivning matchar `classify()` i `src/policy.ts`. Logga några riktiga anrop och justera.
-3. `onPermissionRequest`: fältnamnen (`kind`, `fullCommandText`, `fileName`) och att `{ kind: "deny" }` nekar.
-4. `assistant.usage` och `session.rpc.usage.getMetrics()`: jämför cwf:s AIC med `/usage` på tre sessioner.
-5. `customAgents` med annan modell (`gpt-6-luna`), och att modellerna är påslagna i er plan.
-6. Hur länge ett verktygsanrop kan stå öppet medan cwf väntar på dig.
-7. `twg context jira workitem` – att länkade Confluence-sidor och beskrivningen kommer med.
+1. Pin `@github/copilot-sdk` and the Copilot CLI to exact versions in `package.json`.
+2. Hooks: that `onPreToolUse` receives `toolName`/`toolArgs`, and that the tool names for shell and file writes
+   match `classify()` in `src/policy.ts`. Log a few real calls and adjust.
+3. `onPermissionRequest`: that auto-approval is what you want (see YOLO above).
+4. `assistant.usage` and `session.rpc.usage.getMetrics()`: compare cwf's AIC with `/usage` over three sessions.
+5. `customAgents` with a different model (`gpt-6-luna`), and that both models are enabled for your plan.
+6. How long a tool call can stay open while cwf waits for you.
+7. `twg context jira workitem`: that linked Confluence pages and the description come along.
 
-## Inte med i första versionen
+## Not in the first version
 
-Jira-kommentarer, BA-flödet, uppföljning av CI och granskningskommentarer, sub-items,
-teamets inställningsfil, `cwf status`, byte av session vid full kontext. Kan läggas till när
-kärnan körts på några riktiga ärenden.
+Jira comments, CI follow-up and review comments, sub-items, a shared team settings file,
+`cwf status`, and switching session when the context is full. These can be added once the core
+has run on a few real issues.

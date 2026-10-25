@@ -1,7 +1,7 @@
 {
   "name": "cwf",
   "version": "0.1.0",
-  "description": "Tar ett Jira-ärende till en PR med GitHub Copilot, i devcontainer.",
+  "description": "Takes a Jira issue to a pull request with GitHub Copilot.",
   "type": "module",
   "bin": {
     "cwf": "./bin/cwf"

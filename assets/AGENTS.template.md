@@ -1,34 +1,29 @@
-# AGENTS.md – mall för repon som cwf arbetar i
+# AGENTS.md – template for repos that cwf works in
 
-Copilot läser den här filen i varje repo och följer den. cwf själv vet ingenting om
-repots kod, så allt repospecifikt hör hemma här. Anpassa och checka in i repots rot.
+Copilot reads this file in every repo and follows it. cwf itself knows nothing about the
+repo's code, so everything repo-specific belongs here. Adapt it and check it in at the repo root.
 
-## Om repot
-- Vad repot gör, på två–tre meningar.
-- Viktigaste katalogerna, t.ex. `src/Api/`, `src/Domain/`, `tests/`, `infra/`.
+## About the repo
+- What the repo does, in two or three sentences.
+- The most important directories, e.g. `src/Api/`, `src/Domain/`, `tests/`, `infra/`.
 
-## Mönster att följa
-- Pekare till exempel som ny kod ska efterlikna, t.ex. "Nya endpoints: se `src/Api/Invoices/`".
-- Mönster som är utfasade och inte ska kopieras.
+## Patterns to follow
+- Pointers to examples that new code should imitate, e.g. "New endpoints: see `src/Api/Invoices/`".
+- Patterns that are deprecated and must not be copied.
 
-## Kod och tester
-- Varje ändring har tester. Befintliga tester tas inte bort eller försvagas.
-- Kör `dotnet test` (eller motsvarande) innan du anropar ready_for_pr.
+## Code and tests
+- Every change has tests. Existing tests are not removed or weakened.
+- Run `dotnet test` (or the equivalent) before calling ready_for_pr.
 
 ## Commits
-- En commit per uppgift.
-- Format: Conventional Commits, t.ex. `feat(invoices): lägg till CSV-export`.
-- Skriv på engelska / svenska (välj).
+- One commit per task.
+- Format: Conventional Commits, e.g. `feat(invoices): add CSV export`.
+- Write commit messages in English (or your team's language, be consistent).
 
-## PR-text
-- Sammanfattning, vad som ändrats, hur det testats.
-- Nämn risker och sådant granskaren bör titta extra på.
+## PR text
+- Summary, what changed, how it was tested.
+- Name the risks and anything the reviewer should look at closely.
 
-## ADR
-- Skapa en ADR i `docs/adr/` när ett beslut påverkar arkitektur, säkerhet eller drift.
-- MADR-format, status alltid `Proposed`. Numret blir nästa lediga.
-
-## AWS CDK
-- Ingen AWS-åtkomst. Verifiera med `cdk synth`.
-- cdk-nag-undantag kräver motivering i koden och i PR-texten.
-- `cdk.context.json` är incheckad; lägg inte till nya lookups.
+## ADRs
+- Create an ADR in `docs/adr/` when a decision affects architecture, security or operations.
+- MADR format, status always `Proposed`. The number is the next free one.

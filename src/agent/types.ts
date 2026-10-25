@@ -1,6 +1,6 @@
 import type { z } from "zod/v4";
 
-/** Ett verktyg som cwf ger Copilot. Argumenten valideras med zod innan handlern körs. */
+/** A tool cwf gives Copilot. Arguments are validated with zod before the handler runs. */
 export interface ToolDef<S extends z.ZodType = z.ZodType> {
   name: string;
   description: string;
@@ -10,15 +10,15 @@ export interface ToolDef<S extends z.ZodType = z.ZodType> {
 
 export interface ToolResult {
   ok: boolean;
-  /** Det Copilot får se. */
+  /** What Copilot sees. */
   text: string;
 }
 
-/** Ett anrop till ett inbyggt verktyg (skal, filskrivning m.m.) som policyn ska bedöma. */
+/** A call to a built-in tool (shell, file write, ...) that the policy should judge. */
 export interface ToolCall {
   toolName: string;
   args: Record<string, unknown>;
-  /** Behörighetstyp från SDK:ns permission request, när den finns. */
+  /** Permission type from the SDK's permission request, when present. */
   kind?: "read" | "write" | "shell" | "url" | "mcp" | "custom-tool" | string;
 }
 
@@ -40,18 +40,18 @@ export interface SessionSpec {
   cwd: string;
   systemPrompt: string;
   tools: ToolDef[];
-  /** Avgör varje inbyggt verktygsanrop innan det körs. */
+  /** Decides every built-in tool call before it runs. */
   policy: (call: ToolCall) => PolicyDecision;
-  /** Extra kontext till Copilot efter ett verktygsanrop (t.ex. varning om @ts-ignore). */
+  /** Extra context for Copilot after a tool call (e.g. a warning about @ts-ignore). */
   afterTool?: (call: ToolCall) => string | undefined;
 }
 
 export interface AgentSession {
-  /** Skickar ett meddelande. Löser när det är mottaget, inte när turen är klar. */
+  /** Sends a message. Resolves when it is received, not when the turn is done. */
   send(prompt: string): Promise<void>;
   on(listener: (e: AgentEvent) => void): void;
   abort(): Promise<void>;
-  /** Avslutar sessionen. Returnerar SDK:ns totalkostnad i nano-AIU om den finns. */
+  /** Ends the session. Returns the SDK's total cost in nano-AIU when available. */
   close(): Promise<bigint | undefined>;
 }
 
@@ -60,23 +60,23 @@ export interface Agent {
   stop(): Promise<void>;
 }
 
-/** Skapar ett verktyg med argumenttyper från zod-schemat. */
+/** Creates a tool with argument types taken from the zod schema. */
 export function defineTool<S extends z.ZodType>(t: ToolDef<S>): ToolDef {
   return t as unknown as ToolDef;
 }
 
-/** Validerar och kör ett verktyg. Fel returneras till Copilot så att den kan rätta sig. */
+/** Validates and runs a tool. Errors are returned to Copilot so it can correct itself. */
 export async function invokeTool(tool: ToolDef, rawArgs: unknown): Promise<ToolResult> {
   const parsed = tool.schema.safeParse(rawArgs);
   if (!parsed.success) {
     const issues = parsed.error.issues
-      .map((i) => `- ${i.path.join(".") || "(rot)"}: ${i.message}`)
+      .map((i) => `- ${i.path.join(".") || "(root)"}: ${i.message}`)
       .join("\n");
-    return { ok: false, text: `Ogiltiga argument till ${tool.name}:\n${issues}\nRätta och anropa igen.` };
+    return { ok: false, text: `Invalid arguments to ${tool.name}:\n${issues}\nFix them and call again.` };
   }
   try {
     return await tool.handler(parsed.data);
   } catch (e) {
-    return { ok: false, text: `${tool.name} misslyckades: ${(e as Error).message}` };
+    return { ok: false, text: `${tool.name} failed: ${(e as Error).message}` };
   }
 }

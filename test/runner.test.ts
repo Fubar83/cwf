@@ -18,60 +18,60 @@ const finishTool = (c: Control): ToolDef => defineTool({
   },
 });
 
-test("ett avslutande verktyg avslutar sessionen", async () => {
-  const agent = new FakeAgent([async (ctx) => void (await ctx.call("finish", { reason: "klart" }))]);
-  const end = await runSession(agent, spec, (c) => [finishTool(c)], { prompt: "kör", budget: budget(), idleMs: 1000 });
-  assert.deepEqual(end, { kind: "blocked", reason: "klart" });
+test("an ending tool ends the session", async () => {
+  const agent = new FakeAgent([async (ctx) => void (await ctx.call("finish", { reason: "done" }))]);
+  const end = await runSession(agent, spec, (c) => [finishTool(c)], { prompt: "run", budget: budget(), idleMs: 1000 });
+  assert.deepEqual(end, { kind: "blocked", reason: "done" });
 });
 
-test("ogiltiga argument returneras till modellen, som kan rätta sig", async () => {
+test("invalid arguments are returned to the model, which can correct itself", async () => {
   let firstError = "";
   const agent = new FakeAgent([
     async (ctx) => {
       firstError = (await ctx.call("finish", { reason: 42 })).text;
-      await ctx.call("finish", { reason: "rättat" });
+      await ctx.call("finish", { reason: "fixed" });
     },
   ]);
-  const end = await runSession(agent, spec, (c) => [finishTool(c)], { prompt: "kör", budget: budget(), idleMs: 1000 });
-  assert.match(firstError, /Ogiltiga argument/);
+  const end = await runSession(agent, spec, (c) => [finishTool(c)], { prompt: "run", budget: budget(), idleMs: 1000 });
+  assert.match(firstError, /Invalid arguments/);
   assert.equal(end.kind, "blocked");
 });
 
-test("tystnad räknas som hängning", async () => {
+test("silence counts as a hang", async () => {
   const agent = new FakeAgent([() => new Promise(() => {})]);
-  const end = await runSession(agent, spec, () => [], { prompt: "kör", budget: budget(), idleMs: 50 });
+  const end = await runSession(agent, spec, () => [], { prompt: "run", budget: budget(), idleMs: 50 });
   assert.equal(end.kind, "hung");
 });
 
-test("vakten står still medan en dialog är öppen", async () => {
+test("the watchdog stands still while a dialog is open", async () => {
   const slowDialog = (c: Control): ToolDef => defineTool({
     name: "ask",
     description: "",
     schema: z.object({}),
     handler: async () => {
       await c.dialog(() => new Promise((r) => setTimeout(r, 150)));
-      c.end({ kind: "paused", reason: "svarat" });
+      c.end({ kind: "paused", reason: "answered" });
       return { ok: true, text: "ok" };
     },
   });
   const agent = new FakeAgent([async (ctx) => void (await ctx.call("ask", {}))]);
-  const end = await runSession(agent, spec, (c) => [slowDialog(c)], { prompt: "kör", budget: budget(), idleMs: 50 });
+  const end = await runSession(agent, spec, (c) => [slowDialog(c)], { prompt: "run", budget: budget(), idleMs: 50 });
   assert.equal(end.kind, "paused");
 });
 
-test("AIC-taket stoppar sessionen", async () => {
+test("the AI-credit cap stops the session", async () => {
   const agent = new FakeAgent([
     async (ctx) => {
       ctx.usage(1_000_000, 1_000_000);
       await new Promise(() => {});
     },
   ]);
-  const end = await runSession(agent, spec, () => [], { prompt: "kör", budget: budget(), idleMs: 1000 });
+  const end = await runSession(agent, spec, () => [], { prompt: "run", budget: budget(), idleMs: 1000 });
   assert.equal(end.kind, "budget");
 });
 
-test("modellen påminns om den slutar utan avslutande verktyg, sedan ger cwf upp", async () => {
+test("the model is reminded when it stops without an ending tool, then cwf gives up", async () => {
   const agent = new FakeAgent([async () => {}]);
-  const end = await runSession(agent, spec, () => [], { prompt: "kör", budget: budget(), idleMs: 1000, maxNudges: 2 });
+  const end = await runSession(agent, spec, () => [], { prompt: "run", budget: budget(), idleMs: 1000, maxNudges: 2 });
   assert.equal(end.kind, "gave-up");
 });

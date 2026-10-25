@@ -5,13 +5,13 @@ import { must } from "./exec.ts";
 export interface Issue {
   key: string;
   summary: string;
-  /** Hela svaret från twg, sparas som context för Copilot. */
+  /** The whole twg response, saved as context for Copilot. */
   raw: unknown;
-  /** Hash av beskrivning och acceptanskriterier, för att upptäcka ändringar under paus. */
+  /** Hash of description and acceptance criteria, to detect changes during a pause. */
   hash: string;
 }
 
-/** Plockar ut ett fält ur twg-svaret oavsett om det ligger platt eller under fields. */
+/** Picks a field out of the twg response, whether it is flat or nested under fields. */
 function pick(obj: unknown, ...names: string[]): unknown {
   const seen = new Set<unknown>();
   const stack = [obj];
@@ -37,8 +37,8 @@ export function parseIssue(key: string, raw: unknown): Issue {
 }
 
 /**
- * Hämtar ärendet med länkat innehåll via twg. Copilot läser sedan bara de
- * Confluence-sidor som är länkade härifrån (eller i beskrivningen).
+ * Fetches the issue with its linked content via twg. Copilot then only reads the
+ * Confluence pages linked from here (or in the description).
  */
 export async function fetchIssue(cfg: Config, key: string): Promise<Issue> {
   const out = await must("twg", [

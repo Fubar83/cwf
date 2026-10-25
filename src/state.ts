@@ -80,7 +80,7 @@ export const StateSchema = z.object({
 });
 export type State = z.infer<typeof StateSchema>;
 
-/** Skriver atomiskt: temp-fil, fsync, rename. Ett avbrott lämnar alltid den gamla eller nya filen hel. */
+/** Writes atomically: temp file, fsync, rename. An interruption always leaves the old or the new file intact. */
 export function writeAtomic(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.tmp`;
@@ -94,7 +94,7 @@ export function writeAtomic(path: string, content: string): void {
   renameSync(tmp, path);
 }
 
-/** Allt cwf sparar för ett ärende ligger i <ärendekatalog>/.cwf/. */
+/** Everything cwf saves for an issue lives in <issue directory>/.cwf/. */
 export class Store {
   constructor(readonly dir: string) {}
 
@@ -115,7 +115,7 @@ export class Store {
     const parsed = StateSchema.safeParse(raw);
     if (!parsed.success) {
       throw new Error(
-        `state.json är skadad eller från en annan cwf-version: ${parsed.error.issues[0]?.message}`,
+        `state.json is corrupt or from another cwf version: ${parsed.error.issues[0]?.message}`,
       );
     }
     return parsed.data;
@@ -134,14 +134,14 @@ export class Store {
     return existsSync(p) ? readFileSync(p, "utf8") : undefined;
   }
 
-  /** Lägger till en rad (JSON Lines). Loggning får aldrig stoppa flödet. */
+  /** Appends a line (JSON Lines). Logging must never stop the flow. */
   log(name: string, entry: unknown) {
     try {
       const p = this.path(name);
       mkdirSync(dirname(p), { recursive: true });
       appendFileSync(p, JSON.stringify({ at: new Date().toISOString(), ...(entry as object) }) + "\n");
     } catch {
-      /* ignoreras */
+      /* ignored */
     }
   }
 }
@@ -149,8 +149,8 @@ export class Store {
 export class LockedError extends Error {}
 
 /**
- * Enkelt lås per ärende. Skapas exklusivt (O_EXCL). Ett lås från en process som
- * inte längre lever på samma värd tas över.
+ * A simple lock per issue, created exclusively (O_EXCL). A lock left by a process that
+ * is no longer alive on the same host is taken over.
  */
 export function acquireLock(store: Store): () => void {
   mkdirSync(store.dir, { recursive: true });
@@ -168,22 +168,22 @@ export function acquireLock(store: Store): () => void {
       try {
         other = JSON.parse(readFileSync(p, "utf8"));
       } catch {
-        /* trasigt lås: ta över */
+        /* broken lock: take it over */
       }
       if (other && other.host === me.host && isAlive(other.pid)) {
         throw new LockedError(
-          `Ärendet körs redan (pid ${other.pid}, startad ${other.started}).`,
+          `The issue is already running (pid ${other.pid}, started ${other.started}).`,
         );
       }
       if (other && other.host !== me.host) {
         throw new LockedError(
-          `Ärendet är låst från en annan värd (${other.host}). Ta bort ${p} om det är fel.`,
+          `The issue is locked from another host (${other.host}). Delete ${p} if that is wrong.`,
         );
       }
       rmSync(p, { force: true });
     }
   }
-  throw new LockedError(`Kunde inte ta låset ${p}.`);
+  throw new LockedError(`Could not take the lock ${p}.`);
 }
 
 function isAlive(pid: number): boolean {

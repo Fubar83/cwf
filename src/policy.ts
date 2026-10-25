@@ -6,30 +6,29 @@ export type PolicyPhase = "plan" | "build";
 
 export interface PolicyContext {
   phase: PolicyPhase;
-  /** Ärendekatalogen, t.ex. projects/vfs-1350. Worktrees ligger direkt under den. */
+  /** The issue directory, e.g. projects/vfs-1350. Worktrees are directly under it. */
   issueDir: string;
 }
 
 const allow: PolicyDecision = { allow: true };
 const deny = (reason: string): PolicyDecision => ({ allow: false, reason });
 
-/** Kommandon som alltid nekas, oavsett fas. Matchas mot varje delkommando. */
+/** Commands that are always denied, in every phase. Matched against each sub-command. */
 const ALWAYS_DENY: [RegExp, string][] = [
-  [/^git\s+push\b/, "Push gör cwf efter ditt godkännande vid publicering."],
-  [/^git\s+(rebase|reset\s+--hard|checkout|switch|clean|stash|filter-branch|worktree)\b/, "cwf använder bara merge och ändrar aldrig vilken branch som är utcheckad. Använd git restore för att ångra filer."],
-  [/^git\s+commit\b.*(--no-verify|\s-n\b)/, "Hooks får inte hoppas över."],
-  [/^git\s+(config|remote)\b/, "Git-inställningar och remotes ändras inte."],
-  [/^gh\s+(pr\s+(create|merge|ready|close|edit|comment|review)|repo\s+(delete|edit|create)|release|secret|variable|workflow\s+run)\b/, "Skrivande gh-kommandon sköts av cwf."],
-  [/^gh\s+api\b/, "gh api är inte tillåtet. Använd gh search, gh repo view eller gh pr view."],
-  [/^(cdk|npx\s+cdk|npx\s+aws-cdk)\s+(deploy|destroy|bootstrap|import|watch)\b/, "Inga ändringar i AWS. Använd cdk synth."],
-  [/^(aws|curl|wget|ssh|scp|nc|ncat|telnet)\b/, "Nätverks- och molnkommandon är inte tillåtna."],
-  [/^(sudo|su|chmod\s+-R\s+777|rm\s+-rf\s+\/)(\s|$)/, "Inte tillåtet."],
+  [/^git\s+push\b/, "Pushing is done by cwf after your approval at publish time."],
+  [/^git\s+(rebase|reset\s+--hard|checkout|switch|clean|stash|filter-branch|worktree)\b/, "cwf only merges and never changes the checked-out branch. Use git restore to undo files."],
+  [/^git\s+commit\b.*(--no-verify|\s-n\b)/, "Hooks must not be skipped."],
+  [/^git\s+(config|remote)\b/, "Git configuration and remotes are not changed."],
+  [/^gh\s+(pr\s+(create|merge|ready|close|edit|comment|review)|repo\s+(delete|edit|create)|release|secret|variable|workflow\s+run)\b/, "Writing gh commands are run by cwf."],
+  [/^gh\s+api\b/, "gh api is not allowed. Use gh search, gh repo view or gh pr view."],
+  [/^(aws|curl|wget|ssh|scp|nc|ncat|telnet)\b/, "Network and cloud commands are not allowed."],
+  [/^(sudo|su|chmod\s+-R\s+777|rm\s+-rf\s+\/)(\s|$)/, "Not allowed."],
 ];
 
-/** Läsande twg-kommandon. Allt annat i twg nekas. */
+/** Read-only twg commands. Every other twg command is denied. */
 const TWG_READ = /^twg\s+(context\s|confluence\s+(pages|page)\s+(get|view)\b|jira\s+workitem\s+(get|view|query)\b|help\b|--version|doctor\b)/;
 
-/** Det enda som får köras i planläget. */
+/** The only commands allowed in the plan phase. */
 const PLAN_READ_ONLY = [
   /^(ls|cat|head|tail|wc|rg|grep|find|tree|file|stat|pwd|echo|sort|uniq|jq|diff)(\s|$)/,
   /^git\s+(log|show|diff|status|grep|ls-files|ls-tree|blame|branch|rev-parse|merge-base|cat-file)\b/,
@@ -38,7 +37,7 @@ const PLAN_READ_ONLY = [
   /^(npm|pnpm|yarn)\s+(ls|list|view|why)\b/,
 ];
 
-/** Delar upp en kommandorad i delkommandon (;, &&, ||, |, nyrad). */
+/** Splits a command line into sub-commands (;, &&, ||, |, newline). */
 export function splitCommand(cmd: string): string[] {
   return cmd
     .split(/\s*(?:;|&&|\|\||\||\n)\s*/)
@@ -82,30 +81,30 @@ function inside(parent: string, p: string) {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
-/** Kontrollerar ett enskilt delkommando i skalet. */
+/** Checks a single sub-command of a shell line. */
 function checkCommand(sub: string, ctx: PolicyContext): PolicyDecision {
   if (/^twg\s+/.test(sub)) {
-    return TWG_READ.test(sub) ? allow : deny("Bara läsande twg-kommandon är tillåtna (context, confluence pages get, jira workitem get/query).");
+    return TWG_READ.test(sub) ? allow : deny("Only read-only twg commands are allowed (context, confluence pages get, jira workitem get/query).");
   }
   for (const [re, reason] of ALWAYS_DENY) {
     if (re.test(sub)) return deny(reason);
   }
   if (/(^|\s)(\.cwf\/|\.cwf$)/.test(sub) && !/^(cat|head|tail|ls|rg|grep)\b/.test(sub)) {
-    return deny(".cwf/ ägs av cwf och får inte ändras.");
+    return deny(".cwf/ is owned by cwf and must not be changed.");
   }
-  if (SECRET_PATHS.some((re) => re.test(sub))) return deny("Hemligheter och inloggningsfiler får inte läsas.");
+  if (SECRET_PATHS.some((re) => re.test(sub))) return deny("Secrets and login files must not be read.");
   if (ctx.phase === "plan") {
     if (/[^>]>{1,2}|^>/.test(` ${sub}`.replace(/2>&1|>\s*\/dev\/null/g, ""))) {
-      return deny("Planläget är skrivskyddat: omdirigering till fil är inte tillåten.");
+      return deny("The plan phase is read-only: redirecting output to a file is not allowed.");
     }
     if (!PLAN_READ_ONLY.some((re) => re.test(sub))) {
-      return deny(`Planläget är skrivskyddat. "${sub.split(/\s+/).slice(0, 2).join(" ")}" är inte ett läsande kommando. Ändringar görs i Bygga efter godkänd plan.`);
+      return deny(`The plan phase is read-only. "${sub.split(/\s+/).slice(0, 2).join(" ")}" is not a read-only command. Changes are made in the build phase after the plan is approved.`);
     }
   }
   return allow;
 }
 
-/** Policyn för inbyggda verktyg. Används både i onPreToolUse och onPermissionRequest. */
+/** The policy for built-in tools. Used by both onPreToolUse and onPermissionRequest. */
 export function makePolicy(ctx: PolicyContext) {
   const root = resolve(ctx.issueDir);
   const cwfDir = resolve(root, ".cwf");
@@ -113,13 +112,13 @@ export function makePolicy(ctx: PolicyContext) {
 
   return (call: ToolCall): PolicyDecision => {
     const kind = classify(call);
-    if (kind === "mcp-write") return deny("Skrivande GitHub-verktyg är avstängda. cwf sköter PR:er.");
-    if (kind === "url") return deny("Webbåtkomst är avstängd. Läs bara det som är länkat i ärendet via twg.");
+    if (kind === "mcp-write") return deny("Writing GitHub tools are disabled. cwf handles the PRs.");
+    if (kind === "url") return deny("Web access is disabled. Only read what the issue links to, via twg.");
 
     if (kind === "shell") {
       const cmd = commandOf(call.args);
-      if (!cmd) return deny("Kunde inte läsa kommandot.");
-      if (/`|\$\(/.test(cmd)) return deny("Kommandosubstitution (` eller $( ) är inte tillåten. Kör kommandona var för sig.");
+      if (!cmd) return deny("Could not read the command.");
+      if (/`|\$\(/.test(cmd)) return deny("Command substitution (` or $( ) is not allowed. Run the commands one at a time.");
       for (const sub of splitCommand(cmd)) {
         const d = checkCommand(sub, ctx);
         if (!d.allow) return d;
@@ -129,22 +128,23 @@ export function makePolicy(ctx: PolicyContext) {
 
     const paths = pathsOf(call.args).map((p) => resolve(root, p.replace(/^~(?=\/)/, home)));
     for (const p of paths) {
-      if (SECRET_PATHS.some((re) => re.test(p))) return deny("Hemligheter och inloggningsfiler får inte läsas.");
+      // Normalize separators first, so the POSIX patterns also match Windows paths.
+      if (SECRET_PATHS.some((re) => re.test(p.split(sep).join("/")))) return deny("Secrets and login files must not be read.");
     }
 
     if (kind === "write") {
-      if (ctx.phase === "plan") return deny("Planläget är skrivskyddat. Skicka planen med submit_plan.");
-      if (paths.length === 0) return deny("Kunde inte avgöra vilken fil som ska skrivas.");
+      if (ctx.phase === "plan") return deny("The plan phase is read-only. Submit the plan with submit_plan.");
+      if (paths.length === 0) return deny("Could not tell which file is to be written.");
       for (const p of paths) {
-        if (inside(cwfDir, p)) return deny(".cwf/ ägs av cwf och får inte ändras.");
-        if (!inside(root, p) || p === root) return deny(`Skrivning är bara tillåten i ärendets worktrees under ${root}${sep}.`);
+        if (inside(cwfDir, p)) return deny(".cwf/ is owned by cwf and must not be changed.");
+        if (!inside(root, p) || p === root) return deny(`Writing is only allowed in the issue's worktrees under ${root}${sep}.`);
       }
     }
     return allow;
   };
 }
 
-/** Varningar efter en filändring, som läggs till Copilots kontext. */
+/** Warnings after a file change, added to Copilot's context. */
 export function afterTool(call: ToolCall): string | undefined {
   const content = ["content", "new_str", "newText", "file_text", "patch"]
     .map((k) => call.args[k])
@@ -152,11 +152,10 @@ export function afterTool(call: ToolCall): string | undefined {
     .join("\n");
   if (!content) return undefined;
   const hits: string[] = [];
-  if (/@ts-ignore|@ts-nocheck|eslint-disable/.test(content)) hits.push("undantag från typ- eller lintkontroll");
-  if (/NagSuppressions|addResourceSuppressions/.test(content)) hits.push("cdk-nag-undantag");
-  if (/\[(Fact|Test|TestMethod)\(Skip|\.skip\(|xit\(|xdescribe\(/.test(content)) hits.push("överhoppade tester");
-  if (/#pragma warning disable|SuppressMessage/.test(content)) hits.push("undertryckta varningar");
+  if (/@ts-ignore|@ts-nocheck|eslint-disable/.test(content)) hits.push("type- or lint-check exemptions");
+  if (/\[(Fact|Test|TestMethod)\(Skip|\.skip\(|xit\(|xdescribe\(/.test(content)) hits.push("skipped tests");
+  if (/#pragma warning disable|SuppressMessage/.test(content)) hits.push("suppressed warnings");
   return hits.length
-    ? `cwf: ändringen innehåller ${hits.join(", ")}. Gör det bara om det verkligen behövs, och motivera med record_decision.`
+    ? `cwf: this change contains ${hits.join(", ")}. Only do this if it is really needed, and justify it with record_decision.`
     : undefined;
 }

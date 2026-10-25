@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Config } from "./config.ts";
 import { git, gitTry, must } from "./exec.ts";
 
-/** "Lägg till CSV-export för fakturor" → "lagg-till-csv-export-for-fakturor" (max 40 tecken). */
+/** "Add CSV export for invoices" → "add-csv-export-for-invoices" (max 40 characters). */
 export function slugify(title: string, max = 40): string {
   const s = title
     .normalize("NFKD")
@@ -11,7 +11,7 @@ export function slugify(title: string, max = 40): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return s.slice(0, max).replace(/-+$/, "") || "arende";
+  return s.slice(0, max).replace(/-+$/, "") || "issue";
 }
 
 export function branchName(slug: string, title: string) {
@@ -22,7 +22,7 @@ export const mainDir = (cfg: Config, repo: string) => join(cfg.projectsDir, repo
 export const issueDir = (cfg: Config, slug: string) => join(cfg.projectsDir, slug);
 export const worktreeDir = (cfg: Config, slug: string, repo: string) => join(issueDir(cfg, slug), repo);
 
-/** Klonar repot om main-checkouten saknas. Använder gh så att SSO och org stämmer. */
+/** Clones the repo if the main checkout is missing. Uses gh so that SSO and the org match. */
 export async function ensureMainCheckout(cfg: Config, repo: string): Promise<string> {
   const dir = mainDir(cfg, repo);
   if (!existsSync(join(dir, ".git"))) {
@@ -32,14 +32,14 @@ export async function ensureMainCheckout(cfg: Config, repo: string): Promise<str
   return dir;
 }
 
-/** Standardbranchen enligt remoten. Antas aldrig vara "main". */
+/** The default branch according to the remote. Never assumed to be "main". */
 export async function defaultBranch(repoDir: string): Promise<string> {
   const r = await gitTry(repoDir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD");
   if (r.code === 0) return r.stdout.trim().replace(/^origin\//, "");
   await gitTry(repoDir, "remote", "set-head", "origin", "--auto");
   const again = await gitTry(repoDir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD");
   if (again.code === 0) return again.stdout.trim().replace(/^origin\//, "");
-  throw new Error(`Kunde inte avgöra standardbranch för ${repoDir}.`);
+  throw new Error(`Could not determine the default branch for ${repoDir}.`);
 }
 
 async function branchExists(dir: string, ref: string) {
@@ -47,8 +47,8 @@ async function branchExists(dir: string, ref: string) {
 }
 
 /**
- * Skapar eller återanvänder ärendets worktree för ett repo.
- * Finns branchen på remoten (t.ex. från en annan dator) byggs den vidare på.
+ * Creates or reuses the issue's worktree for a repo.
+ * If the branch exists on the remote (e.g. from another machine), it is built upon.
  */
 export async function ensureWorktree(cfg: Config, slug: string, repo: string, branch: string): Promise<string> {
   const main = await ensureMainCheckout(cfg, repo);
@@ -59,7 +59,7 @@ export async function ensureWorktree(cfg: Config, slug: string, repo: string, br
   if (existsSync(join(wt, ".git"))) {
     const current = (await git(wt, "branch", "--show-current")).trim();
     if (current !== branch) {
-      throw new Error(`${wt} är utcheckad på "${current}", väntade "${branch}". Rätta till det manuellt.`);
+      throw new Error(`${wt} is checked out on "${current}", expected "${branch}". Fix it manually.`);
     }
     return wt;
   }
@@ -81,7 +81,7 @@ export async function isDirty(wt: string): Promise<boolean> {
 
 export type MergeResult = "up-to-date" | "merged" | "conflict" | "skipped-dirty";
 
-/** Mergar in standardbranchen. Aldrig rebase. Konflikter lämnas åt nästa Bygga-varv. */
+/** Merges in the default branch. Never rebase. Conflicts are left for the next build round. */
 export async function mergeDefault(wt: string): Promise<MergeResult> {
   if (await isDirty(wt)) return "skipped-dirty";
   await git(wt, "fetch", "origin");
@@ -91,19 +91,19 @@ export async function mergeDefault(wt: string): Promise<MergeResult> {
   if (r.code !== 0) {
     const conflicts = (await git(wt, "diff", "--name-only", "--diff-filter=U")).trim();
     if (conflicts) return "conflict";
-    throw new Error(`git merge misslyckades i ${wt}: ${r.stderr.trim()}`);
+    throw new Error(`git merge failed in ${wt}: ${r.stderr.trim()}`);
   }
   const after = (await git(wt, "rev-parse", "HEAD")).trim();
   return before === after ? "up-to-date" : "merged";
 }
 
-/** Commits på branchen som inte finns i standardbranchen. */
+/** Commits on the branch that are not in the default branch. */
 export async function commitsAhead(wt: string): Promise<number> {
   const base = await defaultBranch(wt);
   return Number((await git(wt, "rev-list", "--count", `origin/${base}..HEAD`)).trim());
 }
 
-/** Kontrollerar att ingen redan pushad commit har skrivits om (amend/rebase efter push). */
+/** Checks that no already pushed commit has been rewritten (amend/rebase after push). */
 export async function remoteIsAncestor(wt: string, branch: string): Promise<boolean> {
   if (!(await branchExists(wt, `refs/remotes/origin/${branch}`))) return true;
   return (await gitTry(wt, "merge-base", "--is-ancestor", `origin/${branch}`, "HEAD")).code === 0;
