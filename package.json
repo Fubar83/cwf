@@ -9,7 +9,8 @@
   "scripts": {
     "wf": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "global": "pnpm install && pnpm link --global"
   },
   "engines": {
     "node": ">=22"

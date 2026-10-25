@@ -14,6 +14,13 @@ ln -s "$PWD/bin/wf" ~/.local/bin/wf
 wf run VFS-1350
 ```
 
+Eller med pnpm, så `wf` finns globalt från vilken mapp som helst:
+
+```bash
+pnpm run global             # pnpm install + pnpm link --global
+wf run VFS-1350
+```
+
 Krav: Node 22+, `git`, `gh` (inloggad), `copilot` (Copilot CLI, inloggad), `twg` (inloggad).
 
 ## Kommandon
