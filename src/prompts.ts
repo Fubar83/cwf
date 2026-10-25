@@ -11,13 +11,13 @@ export const PLAN_HEADINGS = [
 ] as const;
 
 const COMMON = `
-Du arbetar åt utvecklaren via verktyget wf. Skriv allt som riktar sig till utvecklaren på svenska.
+Du arbetar åt utvecklaren via verktyget cwf. Skriv allt som riktar sig till utvecklaren på svenska.
 
-Arbetskatalogen är ärendets katalog. Varje underkatalog utom .wf/ är en git worktree för ett repo,
+Arbetskatalogen är ärendets katalog. Varje underkatalog utom .cwf/ är en git worktree för ett repo,
 redan utcheckad på ärendets branch. Läs varje repos AGENTS.md innan du gör något i det repot och följ den.
 
 Källor:
-- Ärendet med länkat innehåll finns i .wf/issue.json.
+- Ärendet med länkat innehåll finns i .cwf/issue.json.
 - Läs bara Confluence-sidor som är länkade i ärendet (som länkar eller i beskrivningen), med
   \`twg confluence pages get <id> -o json --mode agent\`. Sök aldrig efter andra sidor.
 
@@ -27,7 +27,7 @@ Frågor:
 - Använd ask_user med ifyllt \`investigated\`, 2–4 alternativ med konsekvens, rekommendation och motivering.
 - Högst 5 frågor per anrop. Svarar verktyget "paused", avsluta direkt utan att göra något mer.
 
-Begränsningar: du kan inte pusha, skapa PR:er, nå nätverket eller AWS, eller ändra .wf/.
+Begränsningar: du kan inte pusha, skapa PR:er, nå nätverket eller AWS, eller ändra .cwf/.
 Nekas ett anrop får du en förklaring. Följ den i stället för att försöka gå runt den.
 `.trim();
 
@@ -83,7 +83,7 @@ export function planPrompt(state: State, plan?: string): string {
       `Utvecklarens feedback, svara på varje punkt:\n${state.plan.feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`,
     );
   }
-  parts.push("Börja med att läsa .wf/issue.json och repotens AGENTS.md.");
+  parts.push("Börja med att läsa .cwf/issue.json och repotens AGENTS.md.");
   return parts.join("\n\n");
 }
 

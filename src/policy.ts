@@ -15,11 +15,11 @@ const deny = (reason: string): PolicyDecision => ({ allow: false, reason });
 
 /** Kommandon som alltid nekas, oavsett fas. Matchas mot varje delkommando. */
 const ALWAYS_DENY: [RegExp, string][] = [
-  [/^git\s+push\b/, "Push gör wf efter ditt godkännande vid publicering."],
-  [/^git\s+(rebase|reset\s+--hard|checkout|switch|clean|stash|filter-branch|worktree)\b/, "wf använder bara merge och ändrar aldrig vilken branch som är utcheckad. Använd git restore för att ångra filer."],
+  [/^git\s+push\b/, "Push gör cwf efter ditt godkännande vid publicering."],
+  [/^git\s+(rebase|reset\s+--hard|checkout|switch|clean|stash|filter-branch|worktree)\b/, "cwf använder bara merge och ändrar aldrig vilken branch som är utcheckad. Använd git restore för att ångra filer."],
   [/^git\s+commit\b.*(--no-verify|\s-n\b)/, "Hooks får inte hoppas över."],
   [/^git\s+(config|remote)\b/, "Git-inställningar och remotes ändras inte."],
-  [/^gh\s+(pr\s+(create|merge|ready|close|edit|comment|review)|repo\s+(delete|edit|create)|release|secret|variable|workflow\s+run)\b/, "Skrivande gh-kommandon sköts av wf."],
+  [/^gh\s+(pr\s+(create|merge|ready|close|edit|comment|review)|repo\s+(delete|edit|create)|release|secret|variable|workflow\s+run)\b/, "Skrivande gh-kommandon sköts av cwf."],
   [/^gh\s+api\b/, "gh api är inte tillåtet. Använd gh search, gh repo view eller gh pr view."],
   [/^(cdk|npx\s+cdk|npx\s+aws-cdk)\s+(deploy|destroy|bootstrap|import|watch)\b/, "Inga ändringar i AWS. Använd cdk synth."],
   [/^(aws|curl|wget|ssh|scp|nc|ncat|telnet)\b/, "Nätverks- och molnkommandon är inte tillåtna."],
@@ -90,8 +90,8 @@ function checkCommand(sub: string, ctx: PolicyContext): PolicyDecision {
   for (const [re, reason] of ALWAYS_DENY) {
     if (re.test(sub)) return deny(reason);
   }
-  if (/(^|\s)(\.wf\/|\.wf$)/.test(sub) && !/^(cat|head|tail|ls|rg|grep)\b/.test(sub)) {
-    return deny(".wf/ ägs av wf och får inte ändras.");
+  if (/(^|\s)(\.cwf\/|\.cwf$)/.test(sub) && !/^(cat|head|tail|ls|rg|grep)\b/.test(sub)) {
+    return deny(".cwf/ ägs av cwf och får inte ändras.");
   }
   if (SECRET_PATHS.some((re) => re.test(sub))) return deny("Hemligheter och inloggningsfiler får inte läsas.");
   if (ctx.phase === "plan") {
@@ -108,12 +108,12 @@ function checkCommand(sub: string, ctx: PolicyContext): PolicyDecision {
 /** Policyn för inbyggda verktyg. Används både i onPreToolUse och onPermissionRequest. */
 export function makePolicy(ctx: PolicyContext) {
   const root = resolve(ctx.issueDir);
-  const wfDir = resolve(root, ".wf");
+  const cwfDir = resolve(root, ".cwf");
   const home = homedir();
 
   return (call: ToolCall): PolicyDecision => {
     const kind = classify(call);
-    if (kind === "mcp-write") return deny("Skrivande GitHub-verktyg är avstängda. wf sköter PR:er.");
+    if (kind === "mcp-write") return deny("Skrivande GitHub-verktyg är avstängda. cwf sköter PR:er.");
     if (kind === "url") return deny("Webbåtkomst är avstängd. Läs bara det som är länkat i ärendet via twg.");
 
     if (kind === "shell") {
@@ -136,7 +136,7 @@ export function makePolicy(ctx: PolicyContext) {
       if (ctx.phase === "plan") return deny("Planläget är skrivskyddat. Skicka planen med submit_plan.");
       if (paths.length === 0) return deny("Kunde inte avgöra vilken fil som ska skrivas.");
       for (const p of paths) {
-        if (inside(wfDir, p)) return deny(".wf/ ägs av wf och får inte ändras.");
+        if (inside(cwfDir, p)) return deny(".cwf/ ägs av cwf och får inte ändras.");
         if (!inside(root, p) || p === root) return deny(`Skrivning är bara tillåten i ärendets worktrees under ${root}${sep}.`);
       }
     }
@@ -157,6 +157,6 @@ export function afterTool(call: ToolCall): string | undefined {
   if (/\[(Fact|Test|TestMethod)\(Skip|\.skip\(|xit\(|xdescribe\(/.test(content)) hits.push("överhoppade tester");
   if (/#pragma warning disable|SuppressMessage/.test(content)) hits.push("undertryckta varningar");
   return hits.length
-    ? `wf: ändringen innehåller ${hits.join(", ")}. Gör det bara om det verkligen behövs, och motivera med record_decision.`
+    ? `cwf: ändringen innehåller ${hits.join(", ")}. Gör det bara om det verkligen behövs, och motivera med record_decision.`
     : undefined;
 }

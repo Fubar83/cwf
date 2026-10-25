@@ -3,14 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { git, must, run } from "./exec.ts";
 import type { PrInfo } from "./state.ts";
-import type { WfCtx } from "./tools.ts";
+import type { CwfCtx } from "./tools.ts";
 import type { Reply } from "./ui.ts";
 import { defaultBranch, worktreeDir } from "./workspace.ts";
 
 export type PublishMode = "draft" | "ready";
 
-const START = "<!-- wf:start -->";
-const END = "<!-- wf:end -->";
+const START = "<!-- cwf:start -->";
+const END = "<!-- cwf:end -->";
 const MAX_BODY = 60_000;
 
 /** PR:er i beroendeordning: de som andra beror på kommer först. */
@@ -33,10 +33,10 @@ export function orderByDependencies(prs: PrInfo[]): PrInfo[] {
   return out;
 }
 
-/** Bygger wf:s del av PR-texten. Resten av texten (det någon skrivit för hand) lämnas orörd. */
-export function mergeBody(existing: string | undefined, wfPart: string): string {
-  let part = `${START}\n${wfPart}\n${END}`;
-  if (part.length > MAX_BODY) part = `${START}\n${wfPart.slice(0, MAX_BODY - 200)}\n\n…(kortad av wf)\n${END}`;
+/** Bygger cwf:s del av PR-texten. Resten av texten (det någon skrivit för hand) lämnas orörd. */
+export function mergeBody(existing: string | undefined, cwfPart: string): string {
+  let part = `${START}\n${cwfPart}\n${END}`;
+  if (part.length > MAX_BODY) part = `${START}\n${cwfPart.slice(0, MAX_BODY - 200)}\n\n…(kortad av cwf)\n${END}`;
   if (!existing) return part;
   const s = existing.indexOf(START);
   const e = existing.indexOf(END);
@@ -45,7 +45,7 @@ export function mergeBody(existing: string | undefined, wfPart: string): string 
 }
 
 /** Sammanfattning inför publiceringsbeslutet (K2). */
-export async function summary(ctx: WfCtx, prs: PrInfo[]): Promise<string> {
+export async function summary(ctx: CwfCtx, prs: PrInfo[]): Promise<string> {
   const lines: string[] = [];
   for (const p of prs) {
     const wt = worktreeDir(ctx.cfg, ctx.slug, p.repo);
@@ -72,7 +72,7 @@ export async function summary(ctx: WfCtx, prs: PrInfo[]): Promise<string> {
 }
 
 /** Publiceringsbeslutet. Returnerar valt läge eller null för paus. */
-export async function askPublish(ctx: WfCtx, prs: PrInfo[]): Promise<PublishMode | null> {
+export async function askPublish(ctx: CwfCtx, prs: PrInfo[]): Promise<PublishMode | null> {
   const { ui, cfg } = ctx;
   ui.heading("Redo att publicera");
   ui.info(await summary(ctx, prs));
@@ -104,10 +104,10 @@ async function findPr(wt: string, branch: string): Promise<GhPr | undefined> {
  * Pushar och skapar/uppdaterar PR:er stegvis. Varje steg sparas, så att en ny
  * körning efter ett avbrott fortsätter där den slutade utan dubbletter.
  */
-export async function publish(ctx: WfCtx, prs: PrInfo[], mode: PublishMode): Promise<void> {
+export async function publish(ctx: CwfCtx, prs: PrInfo[], mode: PublishMode): Promise<void> {
   const { state, cfg, ui } = ctx;
   const ordered = orderByDependencies(prs);
-  const tmp = mkdtempSync(join(tmpdir(), "wf-pr-"));
+  const tmp = mkdtempSync(join(tmpdir(), "cwf-pr-"));
   try {
     for (const p of ordered) {
       const wt = worktreeDir(cfg, ctx.slug, p.repo);
@@ -125,7 +125,7 @@ export async function publish(ctx: WfCtx, prs: PrInfo[], mode: PublishMode): Pro
         .map((d) => state.publish[d]?.prUrl)
         .filter(Boolean)
         .map((u) => `- ${u}`);
-      const wfPart = [
+      const cwfPart = [
         p.body.trim(),
         "",
         `Jira: https://${cfg.jira.site.replace(/^https?:\/\//, "")}/browse/${state.key}`,
@@ -134,7 +134,7 @@ export async function publish(ctx: WfCtx, prs: PrInfo[], mode: PublishMode): Pro
 
       const existing = await findPr(wt, state.branch);
       const bodyFile = join(tmp, `${p.repo}.md`);
-      writeFileSync(bodyFile, mergeBody(existing?.body, wfPart));
+      writeFileSync(bodyFile, mergeBody(existing?.body, cwfPart));
       let isDraft: boolean;
       if (existing) {
         await must("gh", ["pr", "edit", String(existing.number), "--title", p.title, "--body-file", bodyFile], { cwd: wt });

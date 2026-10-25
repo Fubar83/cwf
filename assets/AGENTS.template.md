@@ -1,6 +1,6 @@
-# AGENTS.md – mall för repon som wf arbetar i
+# AGENTS.md – mall för repon som cwf arbetar i
 
-Copilot läser den här filen i varje repo och följer den. wf själv vet ingenting om
+Copilot läser den här filen i varje repo och följer den. cwf själv vet ingenting om
 repots kod, så allt repospecifikt hör hemma här. Anpassa och checka in i repots rot.
 
 ## Om repot

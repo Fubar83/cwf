@@ -15,7 +15,7 @@ export async function preflight(cfg: Config, opts: { allowHost: boolean }): Prom
   const checks: Check[] = [];
   const add = (name: string, ok: boolean, detail?: string) => checks.push({ name, ok, detail });
 
-  const inContainer = existsSync("/.dockerenv") || process.env.WF_CONTAINER === "1";
+  const inContainer = existsSync("/.dockerenv") || process.env.CWF_CONTAINER === "1";
   add("Kör i devcontainer", inContainer || opts.allowHost, inContainer ? undefined : "Starta i devcontainern, eller kör med --allow-host.");
 
   const awsSet = AWS_VARS.filter((v) => process.env[v]);

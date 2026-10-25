@@ -9,7 +9,7 @@ const GateStep = z.object({
   run: z.string(),
   /** Steget körs bara om filen finns i repot (relativ sökväg). */
   when: z.string().optional(),
-  /** Kommando som Copilot får som förslag när steget misslyckas. wf kör det aldrig själv. */
+  /** Kommando som Copilot får som förslag när steget misslyckas. cwf kör det aldrig själv. */
   fix: z.string().optional(),
 });
 export type GateStep = z.infer<typeof GateStep>;
@@ -51,12 +51,12 @@ export const ConfigSchema = z.object({
     .prefault({}),
   limits: z
     .object({
-      /** Mjukt AIC-tak per körning. wf frågar om höjning när det nås. */
+      /** Mjukt AIC-tak per körning. cwf frågar om höjning när det nås. */
       aicPerRun: z.number().int().min(30).default(1000),
       buildRounds: z.number().int().min(1).default(4),
       /** Minuter utan händelser innan en session räknas som hängd. */
       idleTimeoutMin: z.number().min(1).default(10),
-      /** Maxtid en wf-dialog får vara öppen innan wf pausar. */
+      /** Maxtid en cwf-dialog får vara öppen innan cwf pausar. */
       waitForUserMin: z.number().min(1).default(20),
     })
     .prefault({}),
@@ -76,7 +76,7 @@ export type Config = z.infer<typeof ConfigSchema>;
 
 export function configPath(): string {
   const base = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
-  return process.env.WF_CONFIG ?? join(base, "wf", "config.yaml");
+  return process.env.CWF_CONFIG ?? join(base, "cwf", "config.yaml");
 }
 
 export class ConfigError extends Error {}
@@ -84,7 +84,7 @@ export class ConfigError extends Error {}
 export function loadConfig(path = configPath()): Config {
   if (!existsSync(path)) {
     throw new ConfigError(
-      `Hittar ingen inställningsfil på ${path}. Kopiera wf.config.example.yaml dit och fyll i.`,
+      `Hittar ingen inställningsfil på ${path}. Kopiera cwf.config.example.yaml dit och fyll i.`,
     );
   }
   const raw = parseYaml(readFileSync(path, "utf8"));

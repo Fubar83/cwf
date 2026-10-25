@@ -10,7 +10,7 @@ import { BUILD_SYSTEM, PLAN_SYSTEM, buildPrompt, planPrompt } from "./prompts.ts
 import { askPublish, publish } from "./publish.ts";
 import { Budget, runSession, type End } from "./runner.ts";
 import { acquireLock, Store, type State } from "./state.ts";
-import { askQuestions, buildTools, checkReady, planTools, reviewPlan, type WfCtx } from "./tools.ts";
+import { askQuestions, buildTools, checkReady, planTools, reviewPlan, type CwfCtx } from "./tools.ts";
 import type { UI } from "./ui.ts";
 import { branchName, ensureWorktree, issueDir, mergeDefault } from "./workspace.ts";
 
@@ -42,7 +42,7 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
   const budget = new Budget(args.aicLimit ?? cfg.limits.aicPerRun, cfg.models.prices);
 
   let state: State;
-  let ctx!: WfCtx;
+  let ctx!: CwfCtx;
   const save = () => store.save(state);
 
   try {
@@ -262,7 +262,7 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
 }
 
 /** Utfall som hanteras likadant i alla faser. "retry" = kör samma fas igen. */
-async function handleCommon(end: End, ctx: WfCtx, budget: Budget): Promise<ExitCode | "retry" | undefined> {
+async function handleCommon(end: End, ctx: CwfCtx, budget: Budget): Promise<ExitCode | "retry" | undefined> {
   const { ui } = ctx;
   switch (end.kind) {
     case "paused":
@@ -289,7 +289,7 @@ async function handleCommon(end: End, ctx: WfCtx, budget: Budget): Promise<ExitC
   }
 }
 
-function block(ctx: WfCtx, reason: string): ExitCode {
+function block(ctx: CwfCtx, reason: string): ExitCode {
   ctx.state.phase = "blocked";
   ctx.state.blockedReason = reason;
   ctx.save();

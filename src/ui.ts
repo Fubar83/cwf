@@ -9,10 +9,10 @@ export interface Choice<T extends string> {
   label: string;
 }
 
-/** Svar från en dialog. `timeout` betyder att användaren inte svarade i tid och wf ska pausa. */
+/** Svar från en dialog. `timeout` betyder att användaren inte svarade i tid och cwf ska pausa. */
 export type Reply<T> = { kind: "ok"; value: T } | { kind: "timeout" };
 
-/** Allt wf visar eller frågar går genom UI, så att tester kan byta ut det. */
+/** Allt cwf visar eller frågar går genom UI, så att tester kan byta ut det. */
 export interface UI {
   info(msg: string): void;
   warn(msg: string): void;
@@ -80,8 +80,8 @@ export class TerminalUI implements UI {
   }
 
   async editor(initial: string): Promise<Reply<string>> {
-    const dir = mkdtempSync(join(tmpdir(), "wf-"));
-    const file = join(dir, "wf.md");
+    const dir = mkdtempSync(join(tmpdir(), "cwf-"));
+    const file = join(dir, "cwf.md");
     writeFileSync(file, initial);
     const editor = process.env.VISUAL || process.env.EDITOR || "vi";
     const r = spawnSync("bash", ["-lc", `${editor} "$1"`, "_", file], { stdio: "inherit" });

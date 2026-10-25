@@ -1,4 +1,4 @@
-# Kopiera till ~/.config/wf/config.yaml (eller ange sökvägen i WF_CONFIG).
+# Kopiera till ~/.config/cwf/config.yaml (eller ange sökvägen i CWF_CONFIG).
 
 projectsDir: ~/projects
 
@@ -20,10 +20,10 @@ models:
     gpt-6-luna: { input: 0.5, output: 2 }   # VERIFIERA mot aktuell prislista
 
 limits:
-  aicPerRun: 1000        # mjukt tak per körning, wf frågar om höjning
+  aicPerRun: 1000        # mjukt tak per körning, cwf frågar om höjning
   buildRounds: 4         # Bygga-varv innan ärendet blockeras
   idleTimeoutMin: 10     # tystnad innan en session räknas som hängd
-  waitForUserMin: 20     # hur länge en fråga får stå obesvarad innan wf pausar
+  waitForUserMin: 20     # hur länge en fråga får stå obesvarad innan cwf pausar
 
 publish:
   default: draft         # draft | ready (förvalt alternativ vid publicering)
@@ -33,7 +33,7 @@ clean:
   staleDays: 14
 
 # Regler per repo. Ett repo utan egna regler använder defaults.
-# gate körs i ordning och stannar vid första fel. wf ändrar aldrig kod:
+# gate körs i ordning och stannar vid första fel. cwf ändrar aldrig kod:
 # `fix` skickas till Copilot som förslag. gitleaks körs alltid sist om det finns.
 repos:
   defaults:

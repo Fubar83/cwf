@@ -15,7 +15,7 @@ export interface FakeCtx {
   shell(command: string): string | null;
   write(path: string, content: string): boolean;
   usage(inputTokens: number, outputTokens: number): void;
-  /** Väntar på nästa meddelande från wf (t.ex. en påminnelse). */
+  /** Väntar på nästa meddelande från cwf (t.ex. en påminnelse). */
   nextPrompt(): Promise<string>;
 }
 

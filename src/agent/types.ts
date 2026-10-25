@@ -1,6 +1,6 @@
 import type { z } from "zod/v4";
 
-/** Ett verktyg som wf ger Copilot. Argumenten valideras med zod innan handlern körs. */
+/** Ett verktyg som cwf ger Copilot. Argumenten valideras med zod innan handlern körs. */
 export interface ToolDef<S extends z.ZodType = z.ZodType> {
   name: string;
   description: string;

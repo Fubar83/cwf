@@ -11,7 +11,7 @@ import { PrInfo, Question, type State, type Store } from "./state.ts";
 import type { UI } from "./ui.ts";
 import { commitsAhead, defaultBranch, isDirty, remoteIsAncestor, worktreeDir } from "./workspace.ts";
 
-export interface WfCtx {
+export interface CwfCtx {
   cfg: Config;
   ui: UI;
   store: Store;
@@ -30,7 +30,7 @@ const fail = (text: string): ToolResult => ({ ok: false, text });
  * Ställer frågorna en i taget och sparar varje svar direkt.
  * Pausar användaren (eller svarar inte i tid) sparas resten som väntande frågor.
  */
-export async function askQuestions(ctx: WfCtx, questions: Question[]): Promise<"answered" | "paused"> {
+export async function askQuestions(ctx: CwfCtx, questions: Question[]): Promise<"answered" | "paused"> {
   const { ui, state } = ctx;
   // Lägg alla som väntande först, så att inget tappas vid avbrott.
   const pendingIds = new Set(state.pendingQuestions.map((q) => q.id));
@@ -74,7 +74,7 @@ export async function askQuestions(ctx: WfCtx, questions: Question[]): Promise<"
   return "answered";
 }
 
-const askUser = (ctx: WfCtx, c: Control) =>
+const askUser = (ctx: CwfCtx, c: Control) =>
   tool({
     name: "ask_user",
     description:
@@ -124,7 +124,7 @@ const FEEDBACK_TEMPLATE = `# Skriv din feedback, en punkt per rad som börjar me
 -
 `;
 
-const submitPlan = (ctx: WfCtx, c: Control) =>
+const submitPlan = (ctx: CwfCtx, c: Control) =>
   tool({
     name: "submit_plan",
     description: `Skicka planförslaget (markdown, högst en sida) till utvecklaren. Rubriker: ${PLAN_HEADINGS.join(", ")}.`,
@@ -171,10 +171,10 @@ const submitPlan = (ctx: WfCtx, c: Control) =>
 
 /**
  * Visar planen och låter utvecklaren godkänna, ge feedback eller pausa.
- * Används både av submit_plan och när wf återupptar en plan som väntar på granskning.
+ * Används både av submit_plan och när cwf återupptar en plan som väntar på granskning.
  */
 export async function reviewPlan(
-  ctx: WfCtx,
+  ctx: CwfCtx,
   plan: string,
   responses: { feedback: number; status: string; why: string; text: string }[] = [],
 ): Promise<"approved" | "feedback" | "paused"> {
@@ -218,7 +218,7 @@ export async function reviewPlan(
 
 // ───────────────────────── Bygga ─────────────────────────
 
-const recordDecision = (ctx: WfCtx) =>
+const recordDecision = (ctx: CwfCtx) =>
   tool({
     name: "record_decision",
     description: "Logga ett beslut du fattat själv, eller en avvikelse från planen.",
@@ -233,7 +233,7 @@ const recordDecision = (ctx: WfCtx) =>
     },
   });
 
-const runGateTool = (ctx: WfCtx) =>
+const runGateTool = (ctx: CwfCtx) =>
   tool({
     name: "run_gate",
     description: "Kör repots kvalitetskontroller (format, bygg, test, hemligheter). Ändrar aldrig kod.",
@@ -249,7 +249,7 @@ const runGateTool = (ctx: WfCtx) =>
 const GENERATED = /(^|\/)(bin|obj|cdk\.out|node_modules|dist|\.terraform)\//;
 
 /** Allt som måste stämma innan publicering. Returnerar problem som Copilot ska åtgärda. */
-export async function checkReady(ctx: WfCtx, prs: PrInfo[], runChecks = true): Promise<string[]> {
+export async function checkReady(ctx: CwfCtx, prs: PrInfo[], runChecks = true): Promise<string[]> {
   const problems: string[] = [];
   const { state, cfg, slug } = ctx;
   const prRepos = new Set(prs.map((p) => p.repo));
@@ -291,18 +291,18 @@ export async function checkReady(ctx: WfCtx, prs: PrInfo[], runChecks = true): P
   return problems;
 }
 
-const readyForPr = (ctx: WfCtx, c: Control) =>
+const readyForPr = (ctx: CwfCtx, c: Control) =>
   tool({
     name: "ready_for_pr",
     description:
       "Signalera att arbetet är klart. Ange PR-titel och PR-text för varje repo med commits, " +
-      "och dependsOn om en PR måste mergas efter en annan. wf kontrollerar och kör gate innan utvecklaren tillfrågas.",
+      "och dependsOn om en PR måste mergas efter en annan. cwf kontrollerar och kör gate innan utvecklaren tillfrågas.",
     schema: z.object({ prs: z.array(PrInfo).min(1) }),
     handler: async ({ prs }) => {
       const problems = await checkReady(ctx, prs);
       if (problems.length) return fail(`Inte redo:\n${problems.map((p) => `- ${p}`).join("\n")}\nÅtgärda och anropa igen.`);
       c.end({ kind: "ready", prs });
-      return ok("Klart. wf tar över publiceringen – gör inget mer.");
+      return ok("Klart. cwf tar över publiceringen – gör inget mer.");
     },
   });
 
@@ -328,9 +328,9 @@ const reportNoChange = (c: Control) =>
     },
   });
 
-export const planTools = (ctx: WfCtx) => (c: Control) => [askUser(ctx, c), submitPlan(ctx, c), reportBlocked(c)];
+export const planTools = (ctx: CwfCtx) => (c: Control) => [askUser(ctx, c), submitPlan(ctx, c), reportBlocked(c)];
 
-export const buildTools = (ctx: WfCtx) => (c: Control) => [
+export const buildTools = (ctx: CwfCtx) => (c: Control) => [
   askUser(ctx, c),
   recordDecision(ctx),
   runGateTool(ctx),

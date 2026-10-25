@@ -1,6 +1,6 @@
 /**
  * Adapter mot @github/copilot-sdk. Allt SDK-specifikt ligger här, så att resten
- * av wf går att testa med FakeAgent och så att en ändrad SDK bara påverkar den här filen.
+ * av cwf går att testa med FakeAgent och så att en ändrad SDK bara påverkar den här filen.
  *
  * SDK:n laddas dynamiskt och typas minimalt. Fält och namn som ska verifieras mot
  * den låsta versionen i etapp 0 är märkta VERIFIERA.
@@ -20,7 +20,7 @@ export class CopilotAgent implements Agent {
     try {
       sdk = await import("@github/copilot-sdk" as string);
     } catch {
-      throw new Error("Hittar inte @github/copilot-sdk. Kör npm install i wf-repot.");
+      throw new Error("Hittar inte @github/copilot-sdk. Kör npm install i cwf-repot.");
     }
     this.client = new sdk.CopilotClient({ autoStart: false, autoRestart: false, logLevel: "error" });
     await this.client.start();
@@ -73,7 +73,7 @@ export class CopilotAgent implements Agent {
           const d = spec.policy(call);
           return d.allow
             ? null
-            : { permissionDecision: "deny", permissionDecisionReason: d.reason ?? "Nekat av wf." };
+            : { permissionDecision: "deny", permissionDecisionReason: d.reason ?? "Nekat av cwf." };
         },
         onPostToolUse: async (input: Any) => {
           emit({ type: "activity" });

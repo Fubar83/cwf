@@ -1,7 +1,7 @@
 import type { Agent, AgentEvent, SessionSpec, ToolDef } from "./agent/types.ts";
 import type { PrInfo } from "./state.ts";
 
-/** Hur en session slutade. Bestäms alltid av wf, aldrig av att modellen "säger" att den är klar. */
+/** Hur en session slutade. Bestäms alltid av cwf, aldrig av att modellen "säger" att den är klar. */
 export type End =
   | { kind: "plan-approved" }
   | { kind: "ready"; prs: PrInfo[] }
@@ -132,7 +132,7 @@ export async function runSession(
   const result = await done;
   if (timer) clearTimeout(timer);
 
-  // Pausen och avslutet är wf:s beslut: sessionen stoppas oavsett vad modellen vill.
+  // Pausen och avslutet är cwf:s beslut: sessionen stoppas oavsett vad modellen vill.
   await session.abort().catch(() => {});
   const total = await session.close().catch(() => undefined);
   // SDK:ns totalsumma för sessionen är sanningen när den finns.

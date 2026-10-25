@@ -70,7 +70,7 @@ test("AIC-taket stoppar sessionen", async () => {
   assert.equal(end.kind, "budget");
 });
 
-test("modellen påminns om den slutar utan avslutande verktyg, sedan ger wf upp", async () => {
+test("modellen påminns om den slutar utan avslutande verktyg, sedan ger cwf upp", async () => {
   const agent = new FakeAgent([async () => {}]);
   const end = await runSession(agent, spec, () => [], { prompt: "kör", budget: budget(), idleMs: 1000, maxNudges: 2 });
   assert.equal(end.kind, "gave-up");

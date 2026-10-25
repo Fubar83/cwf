@@ -94,12 +94,12 @@ export function writeAtomic(path: string, content: string): void {
   renameSync(tmp, path);
 }
 
-/** Allt wf sparar för ett ärende ligger i <ärendekatalog>/.wf/. */
+/** Allt cwf sparar för ett ärende ligger i <ärendekatalog>/.cwf/. */
 export class Store {
   constructor(readonly dir: string) {}
 
   static forIssue(issueDir: string) {
-    return new Store(join(issueDir, ".wf"));
+    return new Store(join(issueDir, ".cwf"));
   }
 
   path(...parts: string[]) {
@@ -115,7 +115,7 @@ export class Store {
     const parsed = StateSchema.safeParse(raw);
     if (!parsed.success) {
       throw new Error(
-        `state.json är skadad eller från en annan wf-version: ${parsed.error.issues[0]?.message}`,
+        `state.json är skadad eller från en annan cwf-version: ${parsed.error.issues[0]?.message}`,
       );
     }
     return parsed.data;

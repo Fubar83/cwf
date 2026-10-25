@@ -21,7 +21,7 @@ export interface Sandbox {
  * en klonad main-checkout i projectsDir och ett låtsas-gh på PATH.
  */
 export function sandbox(repos = ["api"], extra: Record<string, unknown> = {}): Sandbox {
-  const root = mkdtempSync(join(tmpdir(), "wf-test-"));
+  const root = mkdtempSync(join(tmpdir(), "cwf-test-"));
   const projects = join(root, "projects");
   mkdirSync(projects);
   process.env.GIT_AUTHOR_NAME = process.env.GIT_COMMITTER_NAME = "Test";
@@ -39,7 +39,7 @@ export function sandbox(repos = ["api"], extra: Record<string, unknown> = {}): S
     sh(`git clone -q ${bare} ${join(projects, repo)}`);
   }
 
-  // Låtsas-gh: loggar anrop och svarar på det wf använder.
+  // Låtsas-gh: loggar anrop och svarar på det cwf använder.
   const bin = join(root, "bin");
   mkdirSync(bin);
   const ghLogFile = join(root, "gh.log");

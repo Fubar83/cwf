@@ -47,7 +47,7 @@ test("alltid nekat, även i Bygga", () => {
     "cat .env",
     "cat ~/.config/gh/hosts.yml",
     "echo $(cat secret)",
-    "rm -rf .wf/state.json",
+    "rm -rf .cwf/state.json",
   ]) {
     assert.equal(sh(build, bad), false, bad);
   }
@@ -59,10 +59,10 @@ test("Bygga tillåter vanligt utvecklingsarbete", () => {
   }
 });
 
-test("filskrivning bara i worktrees, aldrig i .wf", () => {
+test("filskrivning bara i worktrees, aldrig i .cwf", () => {
   assert.equal(write(build, `${dir}/api/src/x.cs`), true);
   assert.equal(write(build, "api/src/x.cs"), true);
-  assert.equal(write(build, `${dir}/.wf/state.json`), false);
+  assert.equal(write(build, `${dir}/.cwf/state.json`), false);
   assert.equal(write(build, "/etc/passwd"), false);
   assert.equal(write(build, `${dir}/../vfs-9/api/x`), false);
   assert.equal(build({ toolName: "view", args: { path: `${dir}/api/.env.local` }, kind: "read" }).allow, false);

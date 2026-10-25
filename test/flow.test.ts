@@ -13,7 +13,7 @@ const BRANCH = "vfs-1350-lagg-till-csv-export";
 
 /** En typisk planfas: läs, fråga, föreslå plan. */
 const planScript = async (ctx: FakeCtx) => {
-  ctx.shell("cat .wf/issue.json");
+  ctx.shell("cat .cwf/issue.json");
   assert.equal(ctx.write("api/x.txt", "ska nekas"), false, "planläget ska vara skrivskyddat");
   ctx.usage(10_000, 1_000);
   const a = await ctx.call("ask_user", { questions: [question()] });
@@ -79,7 +79,7 @@ test("paus vid fråga och återupptagning utan att tappa något", async () => {
   assert.equal(store.load().pendingQuestions.length, 1);
   assert.ok(!existsSync(store.path("lock")), "låset ska släppas vid paus");
 
-  // Andra körningen: wf ställer den väntande frågan först, sedan planfasen igen
+  // Andra körningen: cwf ställer den väntande frågan först, sedan planfasen igen
   let secondPrompt = "";
   const ui2 = new ScriptedUI(["opt0", "pause"]);
   const code2 = await runIssue(
@@ -172,7 +172,7 @@ test("en ny körning efter publicering skapar ingen dubblett-PR, och städning t
   assert.equal(cands[0]?.suggest, true);
   await removeIssue(sb.cfg, cands[0]!, false);
   assert.ok(!existsSync(join(sb.cfg.projectsDir, "vfs-1350")));
-  assert.ok(existsSync(join(sb.cfg.projectsDir, ".wf-archive")));
+  assert.ok(existsSync(join(sb.cfg.projectsDir, ".cwf-archive")));
   const branches = sh("git branch", join(sb.cfg.projectsDir, "api"));
   assert.doesNotMatch(branches, new RegExp(BRANCH));
 });

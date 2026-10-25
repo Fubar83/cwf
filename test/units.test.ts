@@ -50,7 +50,7 @@ test("feedback: en punkt per rad, kommentarer ignoreras", () => {
   assert.deepEqual(parseFeedback("# bara hjälptext\n-\n"), []);
 });
 
-test("PR-text: bara wf:s del ersätts", () => {
+test("PR-text: bara cwf:s del ersätts", () => {
   const first = mergeBody(undefined, "Ny text");
   const edited = `Handskrivet först\n${first}\nHandskrivet sist`;
   const updated = mergeBody(edited, "Uppdaterad");

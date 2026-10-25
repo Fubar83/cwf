@@ -61,7 +61,7 @@ export async function findCandidates(cfg: Config): Promise<Candidate[]> {
 export async function removeIssue(cfg: Config, c: Candidate, force: boolean): Promise<void> {
   const store = Store.forIssue(c.dir);
   const state = store.load();
-  const archive = join(cfg.projectsDir, ".wf-archive", `${c.slug}-${new Date().toISOString().slice(0, 10)}`);
+  const archive = join(cfg.projectsDir, ".cwf-archive", `${c.slug}-${new Date().toISOString().slice(0, 10)}`);
   mkdirSync(archive, { recursive: true });
   for (const f of ["state.json", "decisions.log", "usage.log", "plan"]) {
     if (existsSync(store.path(f))) cpSync(store.path(f), join(archive, f), { recursive: true });
