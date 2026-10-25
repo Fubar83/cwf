@@ -97,7 +97,7 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
     if (state.phase === "blocked") {
       if (!args.note) {
         ui.warn(`Blockerat: ${state.blockedReason}`);
-        ui.info(`Lös det och kör igen med en anteckning: wf run ${key} -m "..."`);
+        ui.info(`Lös det och kör igen med en anteckning: cwf run ${key} -m "..."`);
         return EXIT.blocked;
       }
       state.phase = state.plan?.approved ? "build" : "plan";
@@ -239,7 +239,7 @@ export async function runIssue(args: RunArgs, deps: Deps): Promise<ExitCode> {
       if (state.phase === "done") {
         const drafts = Object.entries(state.publish).filter(([, p]) => p.prUrl && !p.ready);
         if (!drafts.length) {
-          ui.info("Ärendet är klart. Kör wf clean när PR:erna är mergade.");
+          ui.info("Ärendet är klart. Kör cwf clean när PR:erna är mergade.");
           return EXIT.done;
         }
         const r = await ui.select(`${drafts.length} PR:er är drafts. Markera dem som redo för granskning?`, [
@@ -266,10 +266,10 @@ async function handleCommon(end: End, ctx: WfCtx, budget: Budget): Promise<ExitC
   const { ui } = ctx;
   switch (end.kind) {
     case "paused":
-      ui.info(`\nPausad: ${end.reason}\nFortsätt med: wf run ${ctx.state.key}`);
+      ui.info(`\nPausad: ${end.reason}\nFortsätt med: cwf run ${ctx.state.key}`);
       return EXIT.paused;
     case "hung":
-      ui.warn("Copilot svarade inte på länge och stoppades. Kör wf run igen för att fortsätta.");
+      ui.warn("Copilot svarade inte på länge och stoppades. Kör cwf run igen för att fortsätta.");
       return EXIT.paused;
     case "blocked":
       return block(ctx, end.reason);
@@ -295,7 +295,7 @@ function block(ctx: WfCtx, reason: string): ExitCode {
   ctx.save();
   ctx.ui.heading("Blockerat");
   ctx.ui.info(reason);
-  ctx.ui.info(`När det är löst: wf run ${ctx.state.key} -m "vad som ändrats"`);
+  ctx.ui.info(`När det är löst: cwf run ${ctx.state.key} -m "vad som ändrats"`);
   return EXIT.blocked;
 }
 

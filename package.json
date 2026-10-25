@@ -1,13 +1,13 @@
 {
-  "name": "wf",
+  "name": "cwf",
   "version": "0.1.0",
   "description": "Tar ett Jira-ärende till en PR med GitHub Copilot, i devcontainer.",
   "type": "module",
   "bin": {
-    "wf": "./bin/wf"
+    "cwf": "./bin/cwf"
   },
   "scripts": {
-    "wf": "tsx src/cli.ts",
+    "cwf": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "global": "pnpm install && pnpm add --global ."

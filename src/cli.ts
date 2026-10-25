@@ -8,11 +8,11 @@ import { preflight } from "./preflight.ts";
 import { LockedError } from "./state.ts";
 import { TerminalUI } from "./ui.ts";
 
-const HELP = `wf – tar ett Jira-ärende till en PR med GitHub Copilot
+const HELP = `cwf – tar ett Jira-ärende till en PR med GitHub Copilot
 
 Användning:
-  wf run <NYCKEL> [repon…] [flaggor]   Starta eller fortsätt ett ärende
-  wf clean                             Städa bort klara ärenden
+  cwf run <NYCKEL> [repon…] [flaggor]   Starta eller fortsätt ett ärende
+  cwf clean                             Städa bort klara ärenden
 
 Flaggor för run:
   -m, --note <text>     Anteckning till Copilot (krävs för att fortsätta ett blockerat ärende)
@@ -52,7 +52,7 @@ async function main(argv: string[]): Promise<number> {
   }
   const [key, ...repos] = rest;
   if (!key) {
-    console.error("Ange en Jira-nyckel, t.ex. wf run VFS-1350.");
+    console.error("Ange en Jira-nyckel, t.ex. cwf run VFS-1350.");
     return 1;
   }
 

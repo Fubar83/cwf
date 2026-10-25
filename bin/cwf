@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Startar wf med tsx från repots egen node_modules.
+// Startar cwf med tsx från repots egen node_modules.
 // Node-skript så att samma fil fungerar på Linux, macOS, i Git Bash och som pnpm-shim på Windows.
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";

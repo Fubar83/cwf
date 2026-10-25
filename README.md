@@ -1,8 +1,8 @@
-# wf
+# cwf
 
 Tar ett Jira-ärende till en pull request med GitHub Copilot, i devcontainer utan AWS-åtkomst.
 
-wf är ett tunt skal. Copilot fattar innehållsbesluten (plan, kod, tester, commits, PR-text)
+cwf är ett tunt skal. Copilot fattar innehållsbesluten (plan, kod, tester, commits, PR-text)
 utifrån varje repos `AGENTS.md`. wf äger arbetsytan, flödet, kontrollerna, publiceringen och skydden.
 
 ## Kom igång
@@ -10,15 +10,15 @@ utifrån varje repos `AGENTS.md`. wf äger arbetsytan, flödet, kontrollerna, pu
 ```bash
 npm install                 # lås @github/copilot-sdk till en version först, se nedan
 cp wf.config.example.yaml ~/.config/wf/config.yaml   # fyll i
-ln -s "$PWD/bin/wf" ~/.local/bin/wf
-wf run VFS-1350
+ln -s "$PWD/bin/cwf" ~/.local/bin/cwf
+cwf run VFS-1350
 ```
 
-Eller med pnpm, så `wf` finns globalt från vilken mapp som helst:
+Eller med pnpm, så `cwf` finns globalt från vilken mapp som helst:
 
 ```bash
 pnpm run global             # pnpm install + pnpm add --global
-wf run VFS-1350
+cwf run VFS-1350
 ```
 
 Krav: Node 22+, `git`, `gh` (inloggad), `copilot` (Copilot CLI, inloggad), `twg` (inloggad).
@@ -27,11 +27,11 @@ Krav: Node 22+, `git`, `gh` (inloggad), `copilot` (Copilot CLI, inloggad), `twg`
 
 | Kommando | Vad det gör |
 |---|---|
-| `wf run <NYCKEL> [repon…]` | Startar eller fortsätter ett ärende. Utan repon används projektets repon från inställningarna. |
-| `wf run <NYCKEL> -m "text"` | Lägger till en anteckning till Copilot. Krävs för att fortsätta ett blockerat ärende. |
-| `wf run <NYCKEL> --no-publish` | Stannar innan publicering. |
-| `wf run <NYCKEL> --aic-limit 500` | AI-kreditak för just den körningen. |
-| `wf clean` | Tar bort ärenden vars PR:er är mergade eller stängda. Arkiverar state och beslut. |
+| `cwf run <NYCKEL> [repon…]` | Startar eller fortsätter ett ärende. Utan repon används projektets repon från inställningarna. |
+| `cwf run <NYCKEL> -m "text"` | Lägger till en anteckning till Copilot. Krävs för att fortsätta ett blockerat ärende. |
+| `cwf run <NYCKEL> --no-publish` | Stannar innan publicering. |
+| `cwf run <NYCKEL> --aic-limit 500` | AI-kreditak för just den körningen. |
+| `cwf clean` | Tar bort ärenden vars PR:er är mergade eller stängda. Arkiverar state och beslut. |
 
 Exitkoder: `0` klart · `10` pausad · `20` blockerad · `1` fel.
 
@@ -47,7 +47,7 @@ Exitkoder: `0` klart · `10` pausad · `20` blockerad · `1` fel.
 4. **Publicera**: du ser commits, ändrade rader och avvikelser från planen och väljer
    **draft**, **redo för granskning** eller **pausa**. wf pushar och skapar PR:erna i beroendeordning.
 
-Pausar du, eller svarar inte på en fråga inom `waitForUserMin`, sparas allt. Nästa `wf run`
+Pausar du, eller svarar inte på en fråga inom `waitForUserMin`, sparas allt. Nästa `cwf run`
 börjar med de obesvarade frågorna. Copilot-sessioner återupptas aldrig: filerna i `.wf/` är sanningen.
 
 ## Katalogstruktur
@@ -64,7 +64,7 @@ projects/
 │   │   ├── usage.log         AI-krediter per körning
 │   │   └── logs/
 │   └── vfs-api/              worktree på ärendets branch
-└── .wf-archive/              arkiverade ärenden efter wf clean
+└── .wf-archive/              arkiverade ärenden efter cwf clean
 ```
 
 ## Skydd
