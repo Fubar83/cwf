@@ -10,7 +10,7 @@
     "wf": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
-    "global": "pnpm install && pnpm link ."
+    "global": "pnpm install && pnpm add --global ."
   },
   "engines": {
     "node": ">=22"

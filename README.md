@@ -17,7 +17,7 @@ wf run VFS-1350
 Eller med pnpm, så `wf` finns globalt från vilken mapp som helst:
 
 ```bash
-pnpm run global             # pnpm install + pnpm link (global)
+pnpm run global             # pnpm install + pnpm add --global
 wf run VFS-1350
 ```
 
