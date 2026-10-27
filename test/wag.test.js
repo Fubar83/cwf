@@ -646,3 +646,60 @@ test("examples/git-view.sh shows branch, files and commits of a worktree", { ski
   const feature = spawnSync("sh", [view, "--once", join(s.projects, "feature-a")], { encoding: "utf8" });
   assert.match(feature.stdout.replace(/\x1b\[[0-9;]*m/g, ""), /^app-feature-a$/m);
 });
+
+// ───────────────────────── main checkouts ─────────────────────────
+
+const head = (path, ref = "HEAD") => git(path, "rev-parse", ref);
+
+test("creating a feature also brings the main checkout up to date with origin/main", () => {
+  const s = setup();
+  pushToMain(s, "app", "new.txt", "from main\n", "New on main");
+  const r = s.wag("feature-a", "app");
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.err, /app: main checkout updated to origin\/main/);
+  assert.equal(head(s.main()), head(s.main(), "origin/main"));
+  assert.ok(existsSync(join(s.main(), "new.txt")));
+});
+
+test("a clean main checkout on another branch is switched back to main", () => {
+  const s = setup();
+  git(s.main(), "checkout", "-q", "-b", "experiment");
+  const r = s.wag("feature-a", "app");
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.err, /app: main checkout switched from experiment to main/);
+  assert.equal(git(s.main(), "branch", "--show-current"), "main");
+});
+
+test("a main checkout with uncommitted work is left alone, and the feature is still created", () => {
+  const s = setup();
+  pushToMain(s, "app", "new.txt", "from main\n", "New on main");
+  writeFileSync(join(s.main(), "wip.txt"), "work in progress\n");
+  const before = head(s.main());
+  const r = s.wag("feature-a", "app");
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.err, /app: main checkout has uncommitted changes, so it was not updated to origin\/main/);
+  assert.equal(head(s.main()), before);
+  assert.ok(existsSync(join(s.main(), "wip.txt")));
+  assert.ok(existsSync(s.wt()));
+});
+
+test("local commits on main are never touched", () => {
+  const s = setup();
+  commitIn(s.main(), "local.txt", "mine\n", "Local commit on main");
+  pushToMain(s, "app", "new.txt", "from main\n", "New on main");
+  const before = head(s.main());
+  const r = s.wag("feature-a", "app");
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.err, /has local commits that are not on origin, so it was left as it is/);
+  assert.equal(head(s.main()), before);
+});
+
+test("--merge also brings the main checkout up to date", () => {
+  const s = setup();
+  s.wag("feature-a", "app");
+  pushToMain(s, "app", "new.txt", "from main\n", "New on main");
+  const r = s.wag("feature-a", "--merge");
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.err, /app: main checkout updated to origin\/main/);
+  assert.equal(head(s.main()), head(s.main(), "origin/main"));
+});

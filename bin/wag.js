@@ -214,6 +214,41 @@ function trackSameName(main, branch) {
   git(main, "config", `branch.${branch}.merge`, localRef(branch));
 }
 
+/**
+ * Keeps a repo's main checkout on origin's default branch and up to date, right after a fetch.
+ * Only safe moves: switching branch and fast-forwarding happen only when the checkout is clean
+ * (no changes, no new files), and local commits are never touched. Anything else is left as it is,
+ * with a note. Never fails: this is a convenience next to the feature work, not part of it.
+ */
+function updateMainCheckout(repo, main) {
+  try {
+    const base = defaultBranch(main);
+    const remote = remoteRef(base);
+    const current = git(main, "branch", "--show-current");
+    const clean = git(main, "status", "--porcelain").length === 0;
+    if (!clean) {
+      if (!gitOk(main, "merge-base", "--is-ancestor", remote, "HEAD")) {
+        info(`${repo}: main checkout has uncommitted changes, so it was not updated to ${remote.replace("refs/remotes/", "")}`);
+      }
+      return;
+    }
+    if (current !== base) {
+      if (gitOk(main, "rev-parse", "--verify", "--quiet", localRef(base))) git(main, "switch", "--quiet", base);
+      else git(main, "switch", "--quiet", "--track", "-c", base, `origin/${base}`);
+      info(`${repo}: main checkout switched from ${current || "a detached HEAD"} to ${base}`);
+    }
+    if (gitOk(main, "merge-base", "--is-ancestor", remote, "HEAD")) return; // up to date (or ahead)
+    if (!gitOk(main, "merge-base", "--is-ancestor", "HEAD", remote)) {
+      info(`${repo}: main checkout's ${base} has local commits that are not on origin, so it was left as it is`);
+      return;
+    }
+    git(main, "merge", "--quiet", "--ff-only", remote);
+    info(`${repo}: main checkout updated to origin/${base}`);
+  } catch (e) {
+    info(`${repo}: main checkout was not updated: ${e.message}`);
+  }
+}
+
 // ───────────────────────── hooks ─────────────────────────
 
 const toPosix = (p) => p.split(sep).join("/");
@@ -372,6 +407,7 @@ function createAll(cfg, feature, repos) {
     if (undos.length) info(`Rolled back ${undos.length} worktree(s) created by this call.`);
     throw e;
   }
+  for (const p of prepared) updateMainCheckout(p.repo, p.main);
 }
 
 /** Removes worktrees. Checks all of them and runs all remove hooks before removing any. */
@@ -474,6 +510,7 @@ function mergeAll(cfg, feature, repos, abort) {
       conflicts++;
     }
   }
+  for (const t of targets) updateMainCheckout(t.repo, t.main);
   if (conflicts) {
     info(`\nResolve the conflicts (or ask your agent to), git add the files, then run: wag ${feature} --merge`);
     info(`To undo the merges instead: wag ${feature} --merge --abort`);

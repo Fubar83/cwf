@@ -6,8 +6,8 @@ and branches, and runs the hooks and start commands you configure.
 
 ```text
 ~/projects/
-├── api/                          main checkout
-├── web/                          main checkout
+├── api/                          main checkout, kept on main and up to date
+├── web/                          main checkout, kept on main and up to date
 └── feature-a/
     ├── api-feature-a/            worktree, branch feature-a, tracking origin/feature-a
     └── web-feature-a/            worktree, branch feature-a, tracking origin/feature-a
@@ -70,6 +70,8 @@ Then create your config from one of the [examples](examples), for example
   finishes once you have resolved them.
 - **All or nothing.** If one repo fails, everything that call created is rolled back. Removing checks every
   worktree before removing any.
+- **Main checkouts stay on main and up to date.** When wag fetches, it switches a clean main checkout back to
+  main and fast-forwards it; uncommitted work and local commits are never touched.
 - **Local files stay local.** Files copied in by hooks are excluded from git, so they are never committed.
 - **Configured in your home folder**, in `~/.config/wag/config.yaml`. Nothing is needed in the repos.
 

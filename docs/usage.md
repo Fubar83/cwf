@@ -1,13 +1,13 @@
 # Using wag
 
 wag gives each feature its own folder, with one git worktree per repo you work on, all on a branch with
-the feature's name. Your main checkouts stay untouched, so you can work on several features side by side.
+the feature's name. Your main checkouts stay on main and up to date, so you can work on several features side by side.
 
 ## The layout
 
 ```text
 ~/projects/
-├── api/                          main checkout of api (stays on its own branch)
+├── api/                          main checkout of api, kept on main and up to date
 ├── web/                          main checkout of web
 └── feature-a/                    the feature folder
     ├── api-feature-a/            worktree of api, branch feature-a, tracking origin/feature-a
@@ -15,6 +15,7 @@ the feature's name. Your main checkouts stay untouched, so you can work on sever
 ```
 
 - **Main checkouts** are the normal clones, directly under `projects` (or wherever a repo's `path` says).
+  wag keeps them on origin's default branch and up to date, see [main checkouts](#main-checkouts).
 - **The feature folder** is `projects/<feature>`. It only holds worktrees.
 - **Each worktree** is `projects/<feature>/<repo>-<feature>`, made with `git worktree`. Nothing is copied:
   git shares the repository between the main checkout and its worktrees.
@@ -173,6 +174,29 @@ git -C ../tmp-feature-a pull --no-rebase   # merge origin/feature-a in, resolve 
 git -C ../tmp-feature-a push
 git worktree remove ../tmp-feature-a
 wag feature-a api                          # now works
+```
+
+## Main checkouts
+
+The main checkouts in your projects folder, such as `~/projects/api`, stay on origin's default branch and up to
+date, so they are always a current copy of main to read, run or compare with. wag updates them whenever it
+fetches: when it creates worktrees, and when you run `wag feature-a --merge`. Only safe moves are made:
+
+| The main checkout is... | wag does |
+|---|---|
+| on main, clean, behind origin | fast-forwards it to `origin/main` |
+| on another branch, clean | switches it back to main, then fast-forwards it |
+| changed: uncommitted changes or new files | leaves it as it is, and says so if it is behind |
+| on main with local commits that are not on origin | leaves it as it is, and says so |
+
+wag never commits, resets, rebases or discards anything in a main checkout, and a problem there never stops the
+feature work. Do your own work in feature worktrees, and the main checkouts take care of themselves.
+
+```text
+$ wag feature-a api web
+...
+api: main checkout updated to origin/main
+web: main checkout switched from experiment to main
 ```
 
 ## What wag guarantees

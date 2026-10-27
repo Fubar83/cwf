@@ -55,5 +55,5 @@ are ordinary files in that repo, shared through git like any other.
   plain `git push` per repo publishes it.
 - **Local files stay local:** `.env` files and settings copied in by hooks are excluded from git, so an agent's
   `git add -A` never commits them.
-- **Main checkouts stay untouched,** so you can keep using them, or run another agent on another feature at the
-  same time.
+- **Main checkouts stay on main and up to date,** and every feature has its own worktrees, so you can run another
+  agent on another feature at the same time.
