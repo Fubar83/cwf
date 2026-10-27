@@ -20,16 +20,18 @@ Requirements: Node 22+, `git`, `gh` (logged in), `copilot` (Copilot CLI, logged 
 
 ## wt: feature worktrees for one repo
 
-A small helper that puts a feature branch in its own git worktree, so you can start Copilot there by hand.
+One command puts a feature branch in its own git worktree, so you can start Copilot there by hand.
 
 ```bash
-wt create feature-a repo1     # ~/projects/feature-a/repo1-feature-a on branch feature-a
-wt list                       # features and their worktrees
-cd "$(wt path feature-a repo1)"
-wt remove feature-a repo1     # refuses if there are uncommitted changes; the branch is kept
+wt                            # all features
+wt feature-a                  # the worktrees of feature-a
+wt feature-a repo1            # create ~/projects/feature-a/repo1-feature-a if missing, print its path
+cd "$(wt feature-a repo1)"    # create-or-enter in one step
+wt feature-a repo1 --rm       # remove it; refuses if there are uncommitted changes (--force discards them)
 ```
 
-`WT_PROJECTS` sets the projects folder (default `~/projects`). Repos are the main checkouts directly under it.
+The branch is kept on removal. `WT_PROJECTS` sets the projects folder (default `~/projects`).
+Only the path goes to stdout; messages go to stderr.
 
 ## Commands
 
