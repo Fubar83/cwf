@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// sprig – feature worktrees across repos, with hooks and start profiles.
+// wag (Worktrees, Agents, Git) – feature worktrees across repos, with hooks and start profiles.
 //
-//   sprig                                  list all features
-//   sprig <feature>                        list the worktrees of a feature
-//   sprig <feature> <repo>...              create the worktrees if missing, run autostart, print the path
-//   sprig <feature> <repo>... +<profile>   same, but run the named start profile(s) instead of autostart
-//   sprig <feature> <repo>... --no-start   same, without running any start profile
-//   sprig <feature> [<repo>...] --rm       remove the feature's worktrees (all of them if no repo is given)
+//   wag                                  list all features
+//   wag <feature>                        list the worktrees of a feature
+//   wag <feature> <repo>...              create the worktrees if missing, run autostart, print the path
+//   wag <feature> <repo>... +<profile>   same, but run the named start profile(s) instead of autostart
+//   wag <feature> <repo>... --no-start   same, without running any start profile
+//   wag <feature> [<repo>...] --rm       remove the feature's worktrees (all of them if no repo is given)
 //
 // Rules:
 //   - Every repo in a feature gets a branch named <feature>, the same locally and on origin (tracking origin/<feature>).
@@ -17,8 +17,8 @@
 //   - Files copied by hooks are kept out of commits (added to the repo's local exclude list).
 //
 // stdout is only the path: the worktree for one repo, the feature folder for several.
-// So `cd "$(sprig feature-a repo1)"` works. Everything else goes to stderr.
-// Config: $SPRIG_CONFIG, or $XDG_CONFIG_HOME/sprig/config.yaml, or ~/.config/sprig/config.yaml.
+// So `cd "$(wag feature-a repo1)"` works. Everything else goes to stderr.
+// Config: $WAG_CONFIG, or $XDG_CONFIG_HOME/wag/config.yaml, or ~/.config/wag/config.yaml.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
@@ -26,9 +26,9 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 
-class SprigError extends Error {}
+class WagError extends Error {}
 const fail = (msg) => {
-  throw new SprigError(msg);
+  throw new WagError(msg);
 };
 const info = (msg) => console.error(msg);
 
@@ -38,7 +38,7 @@ function git(cwd, ...args) {
   try {
     return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   } catch (e) {
-    throw new SprigError(`git ${args.join(" ")} failed: ${String(e.stderr ?? e.message).trim()}`);
+    throw new WagError(`git ${args.join(" ")} failed: ${String(e.stderr ?? e.message).trim()}`);
   }
 }
 
@@ -61,9 +61,9 @@ const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v)
 const PROFILE_NAME = /^[A-Za-z0-9_.-]+$/;
 
 function configFile() {
-  if (process.env.SPRIG_CONFIG) return process.env.SPRIG_CONFIG;
+  if (process.env.WAG_CONFIG) return process.env.WAG_CONFIG;
   const base = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
-  return join(base, "sprig", "config.yaml");
+  return join(base, "wag", "config.yaml");
 }
 
 function onlyKeys(obj, allowed, at) {
@@ -192,7 +192,7 @@ function reposIn(cfg, feature) {
 function mainCheckout(cfg, repo) {
   const dir = cfg.repos[repo]?.path ?? join(cfg.projects, repo);
   if (!gitOk(dir, "rev-parse", "--is-inside-work-tree")) fail(`${repo} is not a git repository (looked in ${dir})`);
-  if (!gitOk(dir, "remote", "get-url", "origin")) fail(`${repo} has no "origin" remote. sprig needs origin to keep branches in sync.`);
+  if (!gitOk(dir, "remote", "get-url", "origin")) fail(`${repo} has no "origin" remote. wag needs origin to keep branches in sync.`);
   return dir;
 }
 
@@ -268,7 +268,7 @@ function runHooks(cfg, event, ctx) {
   const steps = [...cfg.hooks[event], ...(cfg.repos[ctx.repo]?.[event] ?? [])];
   if (!steps.length) return;
   info(`${event} hooks for ${ctx.repo}-${ctx.feature}:`);
-  const env = { SPRIG_FEATURE: ctx.feature, SPRIG_REPO: ctx.repo, SPRIG_WORKTREE: ctx.wt, SPRIG_MAIN: ctx.main };
+  const env = { WAG_FEATURE: ctx.feature, WAG_REPO: ctx.repo, WAG_WORKTREE: ctx.wt, WAG_MAIN: ctx.main };
   for (const step of steps) {
     if (step.run !== undefined) runCommand(step.run, ctx.wt, env);
     else copyStep(step, ctx);
@@ -277,15 +277,15 @@ function runHooks(cfg, event, ctx) {
 
 /**
  * Start profiles run once per call, for the whole feature, in the printed path.
- * SPRIG_WORKTREES and SPRIG_REPOS are newline-separated, in the same order.
+ * WAG_WORKTREES and WAG_REPOS are newline-separated, in the same order.
  */
 function runStart(cfg, names, ctx) {
   const env = {
-    SPRIG_FEATURE: ctx.feature,
-    SPRIG_FEATURE_DIR: ctx.featureDir,
-    SPRIG_REPOS: ctx.repos.join("\n"),
-    SPRIG_WORKTREES: ctx.worktrees.join("\n"),
-    ...(ctx.repos.length === 1 ? { SPRIG_REPO: ctx.repos[0], SPRIG_WORKTREE: ctx.worktrees[0] } : {}),
+    WAG_FEATURE: ctx.feature,
+    WAG_FEATURE_DIR: ctx.featureDir,
+    WAG_REPOS: ctx.repos.join("\n"),
+    WAG_WORKTREES: ctx.worktrees.join("\n"),
+    ...(ctx.repos.length === 1 ? { WAG_REPO: ctx.repos[0], WAG_WORKTREE: ctx.worktrees[0] } : {}),
   };
   for (const name of names) {
     const steps = cfg.start[name];
@@ -388,7 +388,7 @@ function removeAll(cfg, feature, repos, force) {
     try {
       runHooks(cfg, "remove", { feature, ...t });
     } catch (e) {
-      if (!force) throw new SprigError(`${e.message}\nNothing was removed. Fix the hook, or add --force to remove anyway.`);
+      if (!force) throw new WagError(`${e.message}\nNothing was removed. Fix the hook, or add --force to remove anyway.`);
       info(`Ignoring the failing hook because of --force: ${e.message}`);
     }
   }
@@ -412,20 +412,20 @@ function list(cfg, feature) {
     console.log(f);
     for (const r of repos) console.log(`  ${r.padEnd(20)} ${worktreeOf(cfg, f, r)}`);
   }
-  if (!shown) console.log(feature ? `No worktrees for ${feature}.` : "No features yet. Create one with: sprig <feature> <repo>...");
+  if (!shown) console.log(feature ? `No worktrees for ${feature}.` : "No features yet. Create one with: wag <feature> <repo>...");
 }
 
 // ───────────────────────── CLI ─────────────────────────
 
-const usage = () => `sprig – feature worktrees across repos
+const usage = () => `wag (Worktrees, Agents, Git) – feature worktrees across repos
 
 Usage:
-  sprig                                  list all features
-  sprig <feature>                        list the worktrees of a feature
-  sprig <feature> <repo>...              create the worktrees if missing, run autostart, print the path
-  sprig <feature> <repo>... +<profile>   same, but run the named start profile(s) instead of autostart
-  sprig <feature> <repo>... --no-start   same, without running any start profile
-  sprig <feature> [<repo>...] --rm       remove the worktrees (all of the feature's if no repo is given);
+  wag                                  list all features
+  wag <feature>                        list the worktrees of a feature
+  wag <feature> <repo>...              create the worktrees if missing, run autostart, print the path
+  wag <feature> <repo>... +<profile>   same, but run the named start profile(s) instead of autostart
+  wag <feature> <repo>... --no-start   same, without running any start profile
+  wag <feature> [<repo>...] --rm       remove the worktrees (all of the feature's if no repo is given);
                                          --force discards uncommitted changes and ignores failing hooks
 
 Config: ${configFile()}`;
@@ -472,6 +472,6 @@ function main(argv) {
 try {
   process.exitCode = main(process.argv.slice(2));
 } catch (e) {
-  console.error(`sprig: ${e instanceof SprigError ? e.message : e?.stack ?? e}`);
+  console.error(`wag: ${e instanceof WagError ? e.message : e?.stack ?? e}`);
   process.exitCode = 1;
 }

@@ -1,5 +1,5 @@
-# sprig config. Copy to ~/.config/sprig/config.yaml (or point SPRIG_CONFIG at it).
-# Everything lives here in your home folder; sprig never needs files in the repos themselves.
+# wag config. Copy to ~/.config/wag/config.yaml (or point WAG_CONFIG at it).
+# Everything lives here in your home folder; wag never needs files in the repos themselves.
 
 # Main checkouts live here, and each feature gets a folder here too:
 #   ~/projects/repo1                       main checkout
@@ -14,7 +14,7 @@ projects: ~/projects
 #     to: <to>           ~ and absolute paths from anywhere. "to" is relative to the worktree.
 #     optional: true     skip silently if <from> does not exist
 #     overwrite: true    allow replacing a file that already exists in the worktree
-#   - run: <command>     runs in the worktree with SPRIG_FEATURE, SPRIG_REPO, SPRIG_WORKTREE, SPRIG_MAIN set
+#   - run: <command>     runs in the worktree with WAG_FEATURE, WAG_REPO, WAG_WORKTREE, WAG_MAIN set
 # Copied files are added to the repo's local exclude list, so they are never committed.
 hooks:
   create:
@@ -34,26 +34,26 @@ repos:
 
 # Start profiles run once per call for the whole feature, in the printed path:
 # the worktree for one repo, the feature folder for several.
-# Variables: SPRIG_FEATURE, SPRIG_FEATURE_DIR, and newline-separated SPRIG_REPOS and SPRIG_WORKTREES.
-# Pick profiles per call with +name, e.g. `sprig feature-a repo1 repo2 +tmux`.
+# Variables: WAG_FEATURE, WAG_FEATURE_DIR, and newline-separated WAG_REPOS and WAG_WORKTREES.
+# Pick profiles per call with +name, e.g. `wag feature-a repo1 repo2 +tmux`.
 start:
   # One tmux session per feature: Copilot on the left half, working on all repos from the feature folder;
   # one lazygit per repo stacked on the right half. Calling again attaches; a newly added repo gets its own lazygit.
   # Needs tmux 3.2 or later (Linux, macOS or WSL).
   tmux:
     - run: |
-        s="$SPRIG_FEATURE"
+        s="$WAG_FEATURE"
         t="=$s:"
         if ! tmux has-session -t "=$s" 2>/dev/null; then
-          tmux new-session -d -s "$s" -c "$SPRIG_FEATURE_DIR" \
-            -e SPRIG_FEATURE="$s" -e SPRIG_FEATURE_DIR="$SPRIG_FEATURE_DIR" copilot
+          tmux new-session -d -s "$s" -c "$WAG_FEATURE_DIR" \
+            -e WAG_FEATURE="$s" -e WAG_FEATURE_DIR="$WAG_FEATURE_DIR" copilot
         fi
-        have=$(tmux list-panes -t "$t" -F '#{@sprig_wt}')
-        printf '%s\n' "$SPRIG_WORKTREES" | while IFS= read -r wt; do
+        have=$(tmux list-panes -t "$t" -F '#{@wag_wt}')
+        printf '%s\n' "$WAG_WORKTREES" | while IFS= read -r wt; do
           [ -n "$wt" ] || continue
           printf '%s\n' "$have" | grep -Fqx "$wt" && continue
           pane=$(tmux split-window -t "$t" -c "$wt" -P -F '#{pane_id}' lazygit)
-          tmux set-option -p -t "$pane" @sprig_wt "$wt"
+          tmux set-option -p -t "$pane" @wag_wt "$wt"
         done
         tmux set-window-option -t "$t" main-pane-width 50%
         tmux select-layout -t "$t" main-vertical

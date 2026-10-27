@@ -1,10 +1,10 @@
 {
-  "name": "sprig",
+  "name": "wag",
   "version": "0.1.0",
-  "description": "Feature worktrees across repos, with hooks and start profiles.",
+  "description": "Worktrees, Agents, Git: feature worktrees across repos, with hooks and start profiles.",
   "type": "module",
   "bin": {
-    "sprig": "./src/sprig.mjs"
+    "wag": "./src/wag.mjs"
   },
   "scripts": {
     "test": "node --test \"test/*.test.mjs\"",
