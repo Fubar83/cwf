@@ -56,8 +56,9 @@ Then create your config from one of the [examples](examples), for example
   commands, and start profiles.
 - [Agents](docs/agents.md): running AI agent CLIs on a whole feature or on one repo.
 - [tmux](docs/tmux.md): example tmux sessions per feature, with an agent and lazygit side by side.
-- [Examples](examples): `minimal.yaml` (works everywhere), `config.yaml` (tmux with two panes) and
-  `tmux-lazygit.yaml` (tmux with one lazygit per repo).
+- [Examples](examples): `minimal.yaml` (works everywhere), `config.yaml` (tmux with two panes),
+  `tmux-lazygit.yaml` (tmux with one lazygit per repo) and `tmux-switch.yaml` (tmux with one repo at a time and a
+  terminal; uses `tmux-next-repo.sh`).
 
 ## In short
 
