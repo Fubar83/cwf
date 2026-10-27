@@ -116,7 +116,7 @@ without network and without cost.
 The SDK adapter (`src/agent/copilot.ts`) was written against the documentation and has not been run against
 the real SDK yet. Places to check are marked `VERIFY`.
 
-1. Pin `@github/copilot-sdk` and the Copilot CLI to exact versions in `package.json`.
+1. `@github/copilot-sdk` is pinned to 1.0.26 in `package.json`. Pin the Copilot CLI to the version you tested with too.
 2. Hooks: that `onPreToolUse` receives `toolName`/`toolArgs`, and that the tool names for shell and file writes
    match `classify()` in `src/policy.ts`. Log a few real calls and adjust.
 3. `onPermissionRequest`: that auto-approval is what you want (see YOLO above).

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import { bashPath } from "./shell.ts";
 
 export interface ExecResult {
   code: number;
@@ -53,7 +54,7 @@ function resolveCommand(cmd: string, args: string[]): { file: string; args: stri
 export function run(cmd: string, args: string[], opts: ExecOptions = {}): Promise<ExecResult> {
   return new Promise((resolve) => {
     const call = opts.shell
-      ? { file: "bash", args: ["-lc", [cmd, ...args].join(" ")], verbatim: false }
+      ? { file: bashPath(), args: ["-lc", [cmd, ...args].join(" ")], verbatim: false }
       : resolveCommand(cmd, args);
     const child = spawn(call.file, call.args, {
       cwd: opts.cwd,

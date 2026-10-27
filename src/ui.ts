@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { bashPath } from "./shell.ts";
 
 export interface Choice<T extends string> {
   value: T;
@@ -84,7 +85,7 @@ export class TerminalUI implements UI {
     const file = join(dir, "cwf.md");
     writeFileSync(file, initial);
     const editor = process.env.VISUAL || process.env.EDITOR || "vi";
-    const r = spawnSync("bash", ["-lc", `${editor} "$1"`, "_", file], { stdio: "inherit" });
+    const r = spawnSync(bashPath(), ["-lc", `${editor} "$1"`, "_", file], { stdio: "inherit" });
     const value = readFileSync(file, "utf8");
     rmSync(dir, { recursive: true, force: true });
     if (r.status !== 0) throw new Error(`The editor (${editor}) exited with an error.`);

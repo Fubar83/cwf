@@ -1,26 +1,14 @@
-import { execFileSync, execSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { execSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { bashPath } from "../shell.ts";
 import type { Agent, AgentEvent, AgentSession, SessionSpec, ToolResult } from "./types.ts";
 import { invokeTool } from "./types.ts";
 
 export class Aborted extends Error {}
 
-/**
- * The shell for FakeAgent's shell commands. On Windows the default is cmd.exe, which does not
- * understand single quotes, so Git Bash (shipped with Git for Windows) is used instead.
- */
-const posixShell = (): string | undefined => {
-  if (process.platform !== "win32") return undefined;
-  const [git] = execFileSync("where", ["git"], { encoding: "utf8" }).split(/\r?\n/);
-  if (!git) throw new Error("Cannot find git on PATH, needed for shell commands in the tests.");
-  // where may return ...\cmd\git.exe or ...\mingw64\bin\git.exe; the root is the Git installation.
-  const root = git.trim().replace(/[\\/](cmd|mingw64[\\/]bin|bin)[\\/]git\.exe$/i, "");
-  const bash = join(root, "bin", "bash.exe");
-  if (!existsSync(bash)) throw new Error(`Cannot find Git Bash at ${bash}`);
-  return bash;
-};
-export const SHELL = posixShell();
+/** Shell for the fake's shell commands. cmd.exe on Windows does not understand single quotes, so Git Bash is used. */
+export const SHELL = process.platform === "win32" ? bashPath() : undefined;
 
 /** What a scripted fake agent can do, the way a model would. */
 export interface FakeCtx {
