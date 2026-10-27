@@ -51,8 +51,8 @@ For each repo:
 - **Files:** the first column is staged (green in the pane), the second is not staged (red); `A` added,
   `M` modified, `D` deleted, `??` a new file git does not track yet.
 - **Line counts** for staged and not-staged changes.
-- **Merge hint:** when origin's default branch has commits the feature does not have yet. Bring them in with
-  `wag feature-a --merge` (see [usage](usage.md#keeping-up-with-main-and-resolving-conflicts)).
+- **Merge hint:** when origin's default branch has commits the feature does not have yet; ask your agent to merge
+  them (see [usage](usage.md#keeping-up-with-main)).
 - **Latest commits:** 8 for one repo, 3 per repo in a feature folder. Change it with a number after the folder:
   `sh ~/.config/wag/git-view.sh . 5`.
 
@@ -320,7 +320,6 @@ autostart: [tmux]
 ```bash
 wag feature-a api web              # create (if needed) and open the session
 wag feature-a api web --no-start   # create without opening tmux
-wag feature-a --merge              # bring in the latest main; the git pane shows the result
 tmux kill-session -t feature-a     # close the session when you are done
 ```
 

@@ -214,40 +214,6 @@ function trackSameName(main, branch) {
   git(main, "config", `branch.${branch}.merge`, localRef(branch));
 }
 
-/**
- * Keeps a repo's main checkout on origin's default branch and up to date, right after a fetch.
- * Only safe moves: switching branch and fast-forwarding happen only when the checkout is clean
- * (no changes, no new files), and local commits are never touched. Anything else is left as it is,
- * with a note. Never fails: this is a convenience next to the feature work, not part of it.
- */
-function updateMainCheckout(repo, main) {
-  try {
-    const base = defaultBranch(main);
-    const remote = remoteRef(base);
-    const current = git(main, "branch", "--show-current");
-    const clean = git(main, "status", "--porcelain").length === 0;
-    if (!clean) {
-      if (!gitOk(main, "merge-base", "--is-ancestor", remote, "HEAD")) {
-        info(`${repo}: main checkout has uncommitted changes, so it was not updated to ${remote.replace("refs/remotes/", "")}`);
-      }
-      return;
-    }
-    if (current !== base) {
-      if (gitOk(main, "rev-parse", "--verify", "--quiet", localRef(base))) git(main, "switch", "--quiet", base);
-      else git(main, "switch", "--quiet", "--track", "-c", base, `origin/${base}`);
-      info(`${repo}: main checkout switched from ${current || "a detached HEAD"} to ${base}`);
-    }
-    if (gitOk(main, "merge-base", "--is-ancestor", remote, "HEAD")) return; // up to date (or ahead)
-    if (!gitOk(main, "merge-base", "--is-ancestor", "HEAD", remote)) {
-      info(`${repo}: main checkout's ${base} has local commits that are not on origin, so it was left as it is`);
-      return;
-    }
-    git(main, "merge", "--quiet", "--ff-only", remote);
-    info(`${repo}: main checkout updated to origin/${base}`);
-  } catch (e) {
-    info(`${repo}: main checkout was not updated: ${e.message}`);
-  }
-}
 
 // ───────────────────────── hooks ─────────────────────────
 
@@ -407,7 +373,6 @@ function createAll(cfg, feature, repos) {
     if (undos.length) info(`Rolled back ${undos.length} worktree(s) created by this call.`);
     throw e;
   }
-  for (const p of prepared) updateMainCheckout(p.repo, p.main);
 }
 
 /** Removes worktrees. Checks all of them and runs all remove hooks before removing any. */
@@ -438,86 +403,6 @@ function removeAll(cfg, feature, repos, force) {
   if (existsSync(fdir) && readdirSync(fdir).length === 0) rmSync(fdir, { recursive: true });
 }
 
-// ───────────────────────── merge ─────────────────────────
-
-const mergeInProgress = (wt) => gitOk(wt, "rev-parse", "-q", "--verify", "MERGE_HEAD");
-const conflictedFiles = (wt) => git(wt, "diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean);
-
-function reportConflicts(t, files) {
-  info(`${t.repo}: conflicts in ${files.length} file(s), in ${t.wt}:`);
-  for (const f of files) info(`    ${f}`);
-}
-
-/**
- * Merges origin's default branch into the feature's worktrees. Checks every repo before merging any.
- * A repo with conflicts is left mid-merge; running it again finishes the merges whose conflicts are resolved.
- * With abort, backs out every merge in progress instead. Returns the number of repos that still have conflicts.
- */
-function mergeAll(cfg, feature, repos, abort) {
-  if (!repos.length) fail(`no worktrees for ${feature}`);
-  const targets = repos.map((repo) => {
-    checkName("repo", repo);
-    if (!hasWorktree(cfg, feature, repo)) fail(`no worktree for ${repo} in ${feature}`);
-    return { repo, wt: worktreeOf(cfg, feature, repo), main: mainCheckout(cfg, repo) };
-  });
-
-  if (abort) {
-    for (const t of targets) {
-      if (!mergeInProgress(t.wt)) info(`${t.repo}: no merge in progress`);
-      else {
-        git(t.wt, "merge", "--abort");
-        info(`${t.repo}: merge aborted`);
-      }
-    }
-    return 0;
-  }
-
-  const dirty = [];
-  for (const t of targets) {
-    git(t.main, "fetch", "--quiet", "--prune", "origin");
-    t.base = `origin/${defaultBranch(t.main)}`;
-    t.merging = mergeInProgress(t.wt);
-    if (!t.merging && git(t.wt, "status", "--porcelain").length > 0) dirty.push(t.wt);
-  }
-  if (dirty.length) {
-    fail(`uncommitted changes in:\n  ${dirty.join("\n  ")}\nCommit them first (or ask your agent to). Nothing was merged.`);
-  }
-
-  let conflicts = 0;
-  for (const t of targets) {
-    if (t.merging) {
-      const files = conflictedFiles(t.wt);
-      if (files.length) {
-        reportConflicts(t, files);
-        conflicts++;
-      } else {
-        git(t.wt, "commit", "--no-edit");
-        info(`${t.repo}: merge finished`);
-      }
-      continue;
-    }
-    if (gitOk(t.wt, "merge-base", "--is-ancestor", t.base, "HEAD")) {
-      info(`${t.repo}: already up to date with ${t.base}`);
-      continue;
-    }
-    try {
-      git(t.wt, "merge", "--no-edit", t.base);
-      info(`${t.repo}: merged ${t.base}`);
-    } catch (e) {
-      const files = mergeInProgress(t.wt) ? conflictedFiles(t.wt) : [];
-      if (!files.length) throw e;
-      reportConflicts(t, files);
-      conflicts++;
-    }
-  }
-  for (const t of targets) updateMainCheckout(t.repo, t.main);
-  if (conflicts) {
-    info(`\nResolve the conflicts (or ask your agent to), git add the files, then run: wag ${feature} --merge`);
-    info(`To undo the merges instead: wag ${feature} --merge --abort`);
-  }
-  return conflicts;
-}
-
 /** Worktrees of one feature, or of all features when feature is undefined. */
 function list(cfg, feature) {
   if (!isDir(cfg.projects)) fail(`${cfg.projects} does not exist (set "projects" in ${cfg.file})`);
@@ -545,13 +430,11 @@ Usage:
   wag <feature> <repo>... --no-start   same, without running any start profile
   wag <feature> [<repo>...] --rm       remove the worktrees (all of the feature's if no repo is given);
                                          --force discards uncommitted changes and ignores failing hooks
-  wag <feature> [<repo>...] --merge    merge origin's default branch into the worktrees; after resolving
-                                         conflicts, run it again to finish; --abort backs the merges out
   wag --version                          print the version
 
 Config: ${configFile()}`;
 
-const FLAGS = ["--rm", "--force", "--no-start", "--merge", "--abort"];
+const FLAGS = ["--rm", "--force", "--no-start"];
 
 function main(argv) {
   if (argv.includes("--version") || argv.includes("-v")) {
@@ -565,18 +448,15 @@ function main(argv) {
   const rm = argv.includes("--rm");
   const force = argv.includes("--force");
   const noStart = argv.includes("--no-start");
-  const merge = argv.includes("--merge");
-  const abort = argv.includes("--abort");
   const picked = argv.filter((a) => a.startsWith("+")).map((a) => a.slice(1));
   const unknown = argv.filter((a) => a.startsWith("-") && !FLAGS.includes(a));
   const [feature, ...repos] = argv.filter((a) => !a.startsWith("-") && !a.startsWith("+"));
-  const opening = feature && repos.length && !rm && !merge;
+  const opening = feature && repos.length && !rm;
   const dupes = repos.filter((r, i) => repos.indexOf(r) !== i);
   if (
     unknown.length || dupes.length || (force && !rm) || (rm && !feature) ||
     ((picked.length || noStart) && !opening) || (picked.length && noStart) ||
-    picked.some((p) => !PROFILE_NAME.test(p)) ||
-    (merge && (!feature || rm)) || (abort && !merge)
+    picked.some((p) => !PROFILE_NAME.test(p))
   ) {
     console.error(usage());
     return 1;
@@ -585,8 +465,6 @@ function main(argv) {
   if (!feature) return list(cfg, undefined), 0;
   checkName("feature", feature);
   if (rm) return removeAll(cfg, feature, repos.length ? repos : reposIn(cfg, feature), force), 0;
-  // Conflicts left to resolve are not an error in wag, but the exit code says so for scripts.
-  if (merge) return mergeAll(cfg, feature, repos.length ? repos : reposIn(cfg, feature), abort) ? 1 : 0;
   if (!repos.length) return list(cfg, feature), 0;
 
   createAll(cfg, feature, repos);

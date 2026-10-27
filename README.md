@@ -6,8 +6,8 @@ and branches, and runs the hooks and start commands you configure.
 
 ```text
 ~/projects/
-├── api/                          main checkout, kept on main and up to date
-├── web/                          main checkout, kept on main and up to date
+├── api/                          main checkout
+├── web/                          main checkout
 └── feature-a/
     ├── api-feature-a/            worktree, branch feature-a, tracking origin/feature-a
     └── web-feature-a/            worktree, branch feature-a, tracking origin/feature-a
@@ -17,7 +17,6 @@ and branches, and runs the hooks and start commands you configure.
 wag feature-a api web          # create the worktrees, run your start profiles, print the feature folder
 wag feature-a api              # one repo: prints its worktree, so cd "$(wag feature-a api)" works
 wag                            # list features
-wag feature-a --merge          # bring in the latest main; after resolving conflicts, run it again
 wag feature-a --rm             # remove the feature's worktrees (branches are kept)
 ```
 
@@ -51,8 +50,7 @@ Then create your config from one of the [examples](examples), for example
 
 ## Documentation
 
-- [Using wag](docs/usage.md): the layout, every command, a full session with real output, staying in sync with
-  origin and handling merge conflicts, and what wag guarantees.
+- [Using wag](docs/usage.md): the layout, every command, a full session with real output, and what wag guarantees.
 - [Configuration](docs/configuration.md): the config file in your home folder, hooks that copy local files or run
   commands, and start profiles.
 - [Agents](docs/agents.md): running AI agent CLIs on a whole feature or on one repo.
@@ -66,12 +64,8 @@ Then create your config from one of the [examples](examples), for example
 - **Same branch name everywhere**, tracking `origin/<feature>`, so a plain `git push` just works.
 - **Nothing is guessed.** A missing origin, a failed fetch, a bad name, a branch checked out elsewhere,
   a diverged branch or a config mistake stops wag before it changes anything.
-- **Merging main is one command.** `wag feature-a --merge` checks every repo first, merges, lists conflicts, and
-  finishes once you have resolved them.
 - **All or nothing.** If one repo fails, everything that call created is rolled back. Removing checks every
   worktree before removing any.
-- **Main checkouts stay on main and up to date.** When wag fetches, it switches a clean main checkout back to
-  main and fast-forwards it; uncommitted work and local commits are never touched.
 - **Local files stay local.** Files copied in by hooks are excluded from git, so they are never committed.
 - **Configured in your home folder**, in `~/.config/wag/config.yaml`. Nothing is needed in the repos.
 

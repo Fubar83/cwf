@@ -1,13 +1,13 @@
 # Using wag
 
 wag gives each feature its own folder, with one git worktree per repo you work on, all on a branch with
-the feature's name. Your main checkouts stay on main and up to date, so you can work on several features side by side.
+the feature's name. Your main checkouts are left alone, so you can work on several features side by side.
 
 ## The layout
 
 ```text
 ~/projects/
-├── api/                          main checkout of api, kept on main and up to date
+├── api/                          main checkout of api, left alone
 ├── web/                          main checkout of web
 └── feature-a/                    the feature folder
     ├── api-feature-a/            worktree of api, branch feature-a, tracking origin/feature-a
@@ -15,7 +15,6 @@ the feature's name. Your main checkouts stay on main and up to date, so you can 
 ```
 
 - **Main checkouts** are the normal clones, directly under `projects` (or wherever a repo's `path` says).
-  wag keeps them on origin's default branch and up to date, see [main checkouts](#main-checkouts).
 - **The feature folder** is `projects/<feature>`. It only holds worktrees.
 - **Each worktree** is `projects/<feature>/<repo>-<feature>`, made with `git worktree`. Nothing is copied:
   git shares the repository between the main checkout and its worktrees.
@@ -34,8 +33,6 @@ the feature's name. Your main checkouts stay on main and up to date, so you can 
 | `wag <feature> --rm` | Removes all of the feature's worktrees. Branches are kept. |
 | `wag <feature> <repo>... --rm` | Removes only those worktrees. |
 | `--force` (with `--rm`) | Removes even with uncommitted changes, and ignores failing remove hooks. |
-| `wag <feature> [<repo>...] --merge` | Merges origin's default branch into the worktrees. Run it again after resolving conflicts to finish. |
-| `wag <feature> [<repo>...] --merge --abort` | Backs out the merges in progress. |
 | `wag --help` | Shows usage and which config file is used. |
 
 The printed path is the worktree when you name one repo, and the feature folder when you name several.
@@ -100,57 +97,11 @@ wag checks every worktree before removing any of them, so a refusal never leaves
 The branch is always kept, because it may hold commits you have not pushed. Delete it yourself with
 `git branch -d feature-a` in the main checkout once it is merged.
 
-## Keeping up with main, and resolving conflicts
+## Keeping up with main
 
-### Bringing in the latest main
-
-`wag feature-a --merge` merges origin's default branch, such as `origin/main`, into every worktree of the feature
-(or only the repos you name: `wag feature-a api --merge`):
-
-1. It fetches every repo and checks them all first. If any repo has uncommitted changes, it stops before merging
-   anything, so a feature is never half merged because of a forgotten file.
-2. It merges each repo that is behind, and says which ones are already up to date.
-3. A repo with conflicts is left mid-merge, with the conflicted files listed. The other repos are still merged.
-
-This is real output, for a feature where `api` has a conflict and `web` merges cleanly:
-
-```text
-$ wag feature-a --merge
-api: conflicts in 1 file(s), in ~/projects/feature-a/api-feature-a:
-    Program.cs
-web: merged origin/main
-
-Resolve the conflicts (or ask your agent to), git add the files, then run: wag feature-a --merge
-To undo the merges instead: wag feature-a --merge --abort
-```
-
-### Resolving conflicts
-
-Resolve the listed files in the worktree, or ask your AI agent to, and `git add` them. Then run the same command
-again; it finishes every merge whose conflicts are resolved, and lists what is still left:
-
-```text
-$ wag feature-a --merge
-api: merge finished
-web: already up to date with origin/main
-```
-
-- `wag feature-a --merge --abort` backs out every merge in progress instead, and leaves the branches as they were.
-- The exit code is `1` while conflicts are left, and `0` when everything is merged.
-- wag merges, and never rebases or force-pushes, so commits that are already on origin are never rewritten.
-  After merging, a plain `git push` from the worktree publishes the merge.
-- In a [git pane](tmux.md#the-git-pane), conflicted files show as `UU`, and a hint appears when origin's default
-  branch has commits you have not merged yet. With [delta](tmux.md#reading-diffs-delta) and
-  `conflictStyle = zdiff3`, `git diff` shows conflicts clearly.
-
-### A teammate's commits on the same branch
-
-When someone else pushes to `origin/feature-a`, take their commits in the worktree with plain git:
-
-```bash
-cd "$(wag feature-a api)"
-git pull --no-rebase
-```
+All git work after creating the worktrees is your agent's: committing, merging the latest main, resolving conflicts
+and pushing. Ask it in the worktree, for example "merge origin/main and resolve the conflicts". wag leaves the
+branches alone once the worktrees exist; calling `wag feature-a api` again only prints the path.
 
 ### What wag does when it creates a worktree
 
@@ -165,7 +116,7 @@ wag fetches and checks the branch **when it creates a worktree**:
 | nowhere yet | creates it from origin's default branch |
 
 If wag stops because the local branch and origin have **diverged**, the branch has no worktree yet, so reconcile it
-with a temporary one:
+with a temporary one (or ask your agent to):
 
 ```bash
 cd ~/projects/api
@@ -174,29 +125,6 @@ git -C ../tmp-feature-a pull --no-rebase   # merge origin/feature-a in, resolve 
 git -C ../tmp-feature-a push
 git worktree remove ../tmp-feature-a
 wag feature-a api                          # now works
-```
-
-## Main checkouts
-
-The main checkouts in your projects folder, such as `~/projects/api`, stay on origin's default branch and up to
-date, so they are always a current copy of main to read, run or compare with. wag updates them whenever it
-fetches: when it creates worktrees, and when you run `wag feature-a --merge`. Only safe moves are made:
-
-| The main checkout is... | wag does |
-|---|---|
-| on main, clean, behind origin | fast-forwards it to `origin/main` |
-| on another branch, clean | switches it back to main, then fast-forwards it |
-| changed: uncommitted changes or new files | leaves it as it is, and says so if it is behind |
-| on main with local commits that are not on origin | leaves it as it is, and says so |
-
-wag never commits, resets, rebases or discards anything in a main checkout, and a problem there never stops the
-feature work. Do your own work in feature worktrees, and the main checkouts take care of themselves.
-
-```text
-$ wag feature-a api web
-...
-api: main checkout updated to origin/main
-web: main checkout switched from experiment to main
 ```
 
 ## What wag guarantees
