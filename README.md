@@ -40,10 +40,9 @@ Or from source:
 ```bash
 git clone https://github.com/Fubar83/wag.git
 cd wag
-pnpm run global                       # or: npm install && npm install --global .
+npm run global                        # npm install, then npm install --global .
 ```
 
-With pnpm, if its global bin folder is not on your PATH yet, run `pnpm setup` once and open a new terminal.
 wag works on Windows, Linux and macOS.
 
 Then create your config from one of the [examples](examples), for example
@@ -56,8 +55,9 @@ Then create your config from one of the [examples](examples), for example
 - [Configuration](docs/configuration.md): the config file in your home folder, hooks that copy local files or run
   commands, and start profiles.
 - [Agents](docs/agents.md): running AI agent CLIs on a whole feature or on one repo.
-- [tmux](docs/tmux.md): an example tmux session per feature, with an agent and lazygit side by side.
-- [Examples](examples): `minimal.yaml` (works everywhere) and `config.yaml` (with the tmux example).
+- [tmux](docs/tmux.md): example tmux sessions per feature, with an agent and lazygit side by side.
+- [Examples](examples): `minimal.yaml` (works everywhere), `config.yaml` (tmux with two panes) and
+  `tmux-lazygit.yaml` (tmux with one lazygit per repo).
 
 ## In short
 
@@ -72,8 +72,8 @@ Then create your config from one of the [examples](examples), for example
 ## Development
 
 ```bash
-pnpm install      # or npm install
-pnpm test         # or npm test
+npm install
+npm test
 ```
 
 The tests run wag against real local git repos with bare origins, and check that every config in `examples/`

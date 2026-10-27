@@ -42,7 +42,7 @@
   "scripts": {
     "test": "node --test",
     "prepublishOnly": "node --test",
-    "global": "pnpm install && pnpm add --global ."
+    "global": "npm install && npm install --global ."
   },
   "dependencies": {
     "yaml": "^2.9.0"

@@ -1,7 +1,8 @@
 # wag config: a complete example for Linux, macOS or WSL.
 # Copy to ~/.config/wag/config.yaml (or point WAG_CONFIG at it).
 # Everything lives here in your home folder; wag never needs files in the repos themselves.
-# See docs/configuration.md for every option, and docs/tmux.md for the tmux setup.
+# See docs/configuration.md for every option, and docs/tmux.md for the tmux setup
+# (examples/tmux-lazygit.yaml has a variant with one lazygit per repo).
 
 # Main checkouts live here, and each feature gets a folder here too:
 #   ~/projects/repo1                       main checkout
