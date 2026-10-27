@@ -18,6 +18,19 @@ directory is not on your PATH yet, run `pnpm setup` once and open a new terminal
 
 Requirements: Node 22+, `git`, `gh` (logged in), `copilot` (Copilot CLI, logged in), `twg` (logged in).
 
+## wt: feature worktrees for one repo
+
+A small helper that puts a feature branch in its own git worktree, so you can start Copilot there by hand.
+
+```bash
+wt create feature-a repo1     # ~/projects/feature-a/repo1-feature-a on branch feature-a
+wt list                       # features and their worktrees
+cd "$(wt path feature-a repo1)"
+wt remove feature-a repo1     # refuses if there are uncommitted changes; the branch is kept
+```
+
+`WT_PROJECTS` sets the projects folder (default `~/projects`). Repos are the main checkouts directly under it.
+
 ## Commands
 
 | Command | What it does |

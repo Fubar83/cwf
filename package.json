@@ -4,7 +4,8 @@
   "description": "Takes a Jira issue to a pull request with GitHub Copilot.",
   "type": "module",
   "bin": {
-    "cwf": "./bin/cwf"
+    "cwf": "./bin/cwf",
+    "wt": "./scripts/wt.mjs"
   },
   "scripts": {
     "cwf": "tsx src/cli.ts",
