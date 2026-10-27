@@ -1,29 +1,19 @@
 {
-  "name": "cwf",
+  "name": "sprig",
   "version": "0.1.0",
-  "description": "Takes a Jira issue to a pull request with GitHub Copilot.",
+  "description": "Feature worktrees across repos, with hooks and start profiles.",
   "type": "module",
   "bin": {
-    "cwf": "./bin/cwf",
-    "wt": "./scripts/wt.mjs"
+    "sprig": "./src/sprig.mjs"
   },
   "scripts": {
-    "cwf": "tsx src/cli.ts",
-    "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test test/*.test.ts",
+    "test": "node --test \"test/*.test.mjs\"",
     "global": "pnpm install && pnpm add --global ."
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
-    "@github/copilot-sdk": "1.0.26",
-    "tsx": "^4.19.0",
-    "yaml": "^2.9.0",
-    "zod": "^3.25.0"
-  },
-  "devDependencies": {
-    "@types/node": "^22.0.0",
-    "typescript": "^5.6.0"
+    "yaml": "^2.9.0"
   }
 }

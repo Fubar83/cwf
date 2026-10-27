@@ -1,132 +1,116 @@
-# cwf
+# sprig
 
-Takes a Jira issue to a pull request with GitHub Copilot.
+Feature worktrees across repos. One feature gets one folder, with a git worktree per repo,
+all on a branch with the feature's name. Hooks bring in your local files, and start profiles
+open your tools, for example a tmux session with Copilot and lazygit.
 
-cwf is a thin orchestrator. Copilot makes the content decisions (plan, code, tests, commits, PR text)
-based on each repo's `AGENTS.md`. cwf owns the workspace, the flow, the checks, publishing and the guardrails.
+```text
+~/projects/
+├── repo1/                        main checkout
+├── repo2/                        main checkout
+└── feature-a/
+    ├── repo1-feature-a/          worktree on branch feature-a
+    └── repo2-feature-a/          worktree on branch feature-a
+```
 
-## Getting started
+## Install
 
 ```bash
-pnpm run global                                       # pnpm install + pnpm add --global .
-cp cwf.config.example.yaml ~/.config/cwf/config.yaml  # then fill it in
-cwf run VFS-1350
+git clone https://github.com/Fubar83/sprig.git
+cd sprig
+pnpm run global
+mkdir -p ~/.config/sprig && cp examples/config.yaml ~/.config/sprig/config.yaml   # then edit it
 ```
 
-`pnpm run global` installs `cwf` globally, so it works from any folder. If pnpm's global bin
-directory is not on your PATH yet, run `pnpm setup` once and open a new terminal.
+If pnpm's global bin folder is not on your PATH yet, run `pnpm setup` once and open a new terminal.
+Requires Node 22+ and git.
 
-Requirements: Node 22+, `git`, `gh` (logged in), `copilot` (Copilot CLI, logged in), `twg` (logged in).
-
-## wt: feature worktrees for one repo
-
-One command puts a feature branch in its own git worktree, so you can start Copilot there by hand.
+## Use
 
 ```bash
-wt                            # all features
-wt feature-a                  # the worktrees of feature-a
-wt feature-a repo1            # create ~/projects/feature-a/repo1-feature-a if missing, print its path
-cd "$(wt feature-a repo1)"    # create-or-enter in one step
-wt feature-a repo1 --rm       # remove it; refuses if there are uncommitted changes (--force discards them)
+sprig feature-a repo1 repo2    # create the worktrees (if missing), run autostart, print the feature folder
+sprig feature-a repo1          # one repo: prints its worktree, so cd "$(sprig feature-a repo1)" works
+sprig feature-a repo3 +tmux    # add a repo, run the "tmux" start profile instead of autostart
+sprig feature-a repo1 --no-start
+sprig                          # all features
+sprig feature-a                # the worktrees of feature-a
+sprig feature-a --rm           # remove all of feature-a's worktrees (branches are kept)
+sprig feature-a repo2 --rm     # remove one; --force discards uncommitted changes and ignores failing hooks
 ```
 
-The branch is kept on removal. `WT_PROJECTS` sets the projects folder (default `~/projects`).
-Only the path goes to stdout; messages go to stderr.
+sprig never changes your shell's directory. Only the path goes to stdout; everything else goes to stderr.
 
-Rules, so nothing fails halfway:
-- The branch has the same name locally and on origin, so a plain `git push` from the worktree updates `origin/<feature>`.
-- An existing `origin/<feature>` is picked up, not recreated from main.
-- Stops with an error, and changes nothing, when: origin is missing or cannot be fetched, the name is invalid,
-  the branch is checked out elsewhere, or the local branch has diverged from origin.
-- A create that fails midway is rolled back.
+## What it guarantees
 
-## Commands
+- **Same branch name everywhere.** Every repo in a feature gets the branch `<feature>`, tracking `origin/<feature>`.
+  A plain `git push` from a worktree updates the same-named branch on origin. An existing `origin/<feature>` is picked up.
+- **Nothing is guessed.** sprig stops with an error, and changes nothing, when origin is missing or cannot be fetched,
+  a name is invalid, the branch is checked out elsewhere, the local branch has diverged from origin, or the config is wrong.
+- **All or nothing.** Creating several repos checks all of them first. If one fails, including one of its create hooks,
+  every worktree and branch made by that call is rolled back. Removing checks every worktree for uncommitted changes,
+  and runs every remove hook, before removing anything.
+- **Local files stay local.** Files copied in by hooks are added to the repo's local exclude list, so they are never committed.
 
-| Command | What it does |
-|---|---|
-| `cwf run <KEY> [repos…]` | Starts or continues an issue. Without repos, the project's repos from the settings are used. |
-| `cwf run <KEY> -m "text"` | Adds a note for Copilot. Required to continue a blocked issue. |
-| `cwf run <KEY> --no-publish` | Stops before publishing. |
-| `cwf run <KEY> --aic-limit 500` | AI-credit cap for this run only. |
-| `cwf clean` | Removes issues whose PRs are merged or closed. Archives the state and decisions. |
+## Config
 
-Exit codes: `0` done · `10` paused · `20` blocked · `1` error.
+Everything lives in your home folder: `~/.config/sprig/config.yaml` (or `$XDG_CONFIG_HOME/sprig/config.yaml`,
+or the file in `$SPRIG_CONFIG`). Nothing is needed in the repos. `sprig --help` shows which file is used.
+See [examples/config.yaml](examples/config.yaml) for a complete, commented example.
 
-## The flow
+```yaml
+projects: ~/projects
 
-1. **Prepare** (cwf): preflight checks, lock, one git worktree per repo on the branch `vfs-1350-short-title`,
-   merge of the default branch, and a check whether the issue changed since the last run.
-2. **Plan** (Copilot, read-only): reads the issue and the Confluence pages linked from it,
-   asks blocking questions and proposes a plan of at most one page.
-   You **approve**, give **feedback** in your editor (Copilot must answer every point) or **pause**.
-3. **Build** (Copilot, write mode): one commit per task, runs the checks until everything is green,
-   calls `ready_for_pr`. cwf verifies that everything is committed and runs the checks itself.
-4. **Publish**: you see the commits, the changed lines and deviations from the plan, and choose
-   **draft**, **ready for review** or **pause**. cwf pushes and creates the PRs in dependency order.
+hooks:                      # every repo
+  create:
+    - copy: .env            # relative: from the repo's main checkout
+      optional: true
+repos:
+  repo1:
+    create:
+      - copy: ~/secrets/repo1/appsettings.Local.json
+        to: src/Api/appsettings.Local.json
+      - run: npm ci
+    remove:
+      - run: docker compose down
 
-If you pause, or do not answer a question within `waitForUserMin`, everything is saved. The next
-`cwf run` starts with the unanswered questions. Copilot sessions are never resumed: the files in `.cwf/` are the truth.
-
-## Directory layout
-
-```
-projects/
-├── vfs-api/                  main checkout
-├── vfs-1350/
-│   ├── .cwf/                 cwf's state (Copilot may not write here)
-│   │   ├── state.json        phase, answers, plan, publishing
-│   │   ├── issue.json        the issue from twg
-│   │   ├── plan/v1.md …      plan versions, feedback and approved.md
-│   │   ├── decisions.log     decisions and deviations
-│   │   ├── usage.log         AI credits per run
-│   │   └── logs/
-│   └── vfs-api/              worktree on the issue's branch
-└── .cwf-archive/             issues archived by cwf clean
+start:                      # pick with +name
+  tmux:
+    - run: …                # see examples/config.yaml
+autostart: [tmux]           # runs when no +name is given
 ```
 
-## Guardrails
+- **create** hooks run after a worktree is made, **remove** hooks before it is removed. Global steps run first,
+  then the repo's own. `run` steps get `SPRIG_FEATURE`, `SPRIG_REPO`, `SPRIG_WORKTREE` and `SPRIG_MAIN`.
+- **Start profiles** run once per call for the whole feature, in the printed path. They get `SPRIG_FEATURE`,
+  `SPRIG_FEATURE_DIR`, and newline-separated `SPRIG_REPOS` and `SPRIG_WORKTREES`. A failing start profile
+  is reported but never removes anything.
+- `run` uses your system shell: `sh` on Linux and macOS, `cmd.exe` on Windows.
 
-- **YOLO permissions.** Copilot runs with permission requests auto-approved, so an unattended run never
-  stalls waiting for a human. The guardrails below still apply, because they run before every tool call.
-- **Policy** for every built-in tool call (`src/policy.ts`), enforced in `onPreToolUse`.
-  The plan phase only allows read-only commands. Always denied: `git push`, `rebase`, `reset --hard`,
-  `checkout`, `stash`, `--no-verify`, writing `gh` commands, `gh api`, network tools (`curl`, `wget`, `ssh`, …),
-  writing `twg`, secrets, command substitution, and writes to `.cwf/` or outside the issue.
-- **Warnings** to Copilot about `@ts-ignore`, skipped tests, suppressed warnings, and similar.
-- **Hang watchdog** that stops a session that goes silent while cwf waits for you.
-- **AI-credit cap** per run. When it is reached, cwf asks whether to raise it.
-- **Merge, never rebase or force push.** Conflicts are resolved in the next build round.
-- **No duplicates**: every publish step is saved; the PR text is only updated between
-  `<!-- cwf:start -->` and `<!-- cwf:end -->`.
-- Before publishing: no uncommitted code, no merge in progress, no rewritten pushed commits,
-  no generated files (`bin/`, `obj/`, `dist/`, `node_modules/`) and no files over 5 MB.
+### The tmux profile
 
-## Tests
+The example's `tmux` profile opens one session per feature:
+
+- **Copilot on the left half**, started in the feature folder, so one Copilot works on all the repos at once.
+- **One lazygit per repo** stacked on the right half (lazygit works on one repo at a time).
+- Running sprig again attaches to the session; adding a repo later adds only its lazygit pane.
+
+It needs tmux 3.2 or later, so Linux, macOS or WSL. Zoom a pane with tmux's `prefix z`.
+
+## Copilot
+
+Copilot's own settings stay in its home folder, `~/.copilot/`. sprig does not write Copilot files into repos.
+
+- **Hooks:** the Copilot CLI loads personal hooks from `~/.copilot/hooks/*.json`
+  ([hooks reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-hooks-reference)).
+  There is no command-line flag to add hooks when starting it.
+- **Per-feature behaviour:** the tmux profile starts Copilot with `SPRIG_FEATURE` and `SPRIG_FEATURE_DIR` in its
+  environment, so a hook in `~/.copilot/hooks/` can read them and act per feature.
+
+## Development
 
 ```bash
-pnpm run typecheck
+pnpm install
 pnpm test
 ```
 
-The tests run the whole flow with `FakeAgent` against real local git repos and a fake `gh`,
-without network and without cost.
-
-## Before the first real run
-
-The SDK adapter (`src/agent/copilot.ts`) was written against the documentation and has not been run against
-the real SDK yet. Places to check are marked `VERIFY`.
-
-1. `@github/copilot-sdk` is pinned to 1.0.26 in `package.json`. Pin the Copilot CLI to the version you tested with too.
-2. Hooks: that `onPreToolUse` receives `toolName`/`toolArgs`, and that the tool names for shell and file writes
-   match `classify()` in `src/policy.ts`. Log a few real calls and adjust.
-3. `onPermissionRequest`: that auto-approval is what you want (see YOLO above).
-4. `assistant.usage` and `session.rpc.usage.getMetrics()`: compare cwf's AIC with `/usage` over three sessions.
-5. `customAgents` with a different model (`gpt-6-luna`), and that both models are enabled for your plan.
-6. How long a tool call can stay open while cwf waits for you.
-7. `twg context jira workitem`: that linked Confluence pages and the description come along.
-
-## Not in the first version
-
-Jira comments, CI follow-up and review comments, sub-items, a shared team settings file,
-`cwf status`, and switching session when the context is full. These can be added once the core
-has run on a few real issues.
+The tests run sprig against real local git repos with bare origins. No network needed.

@@ -1,0 +1,67 @@
+# sprig config. Copy to ~/.config/sprig/config.yaml (or point SPRIG_CONFIG at it).
+# Everything lives here in your home folder; sprig never needs files in the repos themselves.
+
+# Main checkouts live here, and each feature gets a folder here too:
+#   ~/projects/repo1                       main checkout
+#   ~/projects/feature-a/repo1-feature-a   worktree on branch feature-a
+projects: ~/projects
+
+# Hooks for every repo. Global steps run first, then the repo's own.
+# create: after a worktree is made. If a step fails, the whole create is rolled back.
+# remove: before a worktree is removed. If a step fails, nothing is removed (unless --force).
+# Steps:
+#   - copy: <from>       a file or folder. Relative paths come from the repo's main checkout,
+#     to: <to>           ~ and absolute paths from anywhere. "to" is relative to the worktree.
+#     optional: true     skip silently if <from> does not exist
+#     overwrite: true    allow replacing a file that already exists in the worktree
+#   - run: <command>     runs in the worktree with SPRIG_FEATURE, SPRIG_REPO, SPRIG_WORKTREE, SPRIG_MAIN set
+# Copied files are added to the repo's local exclude list, so they are never committed.
+hooks:
+  create:
+    - copy: .env            # the main checkout's local .env, if it has one
+      optional: true
+
+repos:
+  repo1:
+    create:
+      - copy: ~/secrets/repo1/appsettings.Local.json
+        to: src/Api/appsettings.Local.json
+      - run: npm ci
+  repo2:
+    path: ~/work/repo2      # a main checkout outside the projects folder
+    remove:
+      - run: docker compose down
+
+# Start profiles run once per call for the whole feature, in the printed path:
+# the worktree for one repo, the feature folder for several.
+# Variables: SPRIG_FEATURE, SPRIG_FEATURE_DIR, and newline-separated SPRIG_REPOS and SPRIG_WORKTREES.
+# Pick profiles per call with +name, e.g. `sprig feature-a repo1 repo2 +tmux`.
+start:
+  # One tmux session per feature: Copilot on the left half, working on all repos from the feature folder;
+  # one lazygit per repo stacked on the right half. Calling again attaches; a newly added repo gets its own lazygit.
+  # Needs tmux 3.2 or later (Linux, macOS or WSL).
+  tmux:
+    - run: |
+        s="$SPRIG_FEATURE"
+        t="=$s:"
+        if ! tmux has-session -t "=$s" 2>/dev/null; then
+          tmux new-session -d -s "$s" -c "$SPRIG_FEATURE_DIR" \
+            -e SPRIG_FEATURE="$s" -e SPRIG_FEATURE_DIR="$SPRIG_FEATURE_DIR" copilot
+        fi
+        have=$(tmux list-panes -t "$t" -F '#{@sprig_wt}')
+        printf '%s\n' "$SPRIG_WORKTREES" | while IFS= read -r wt; do
+          [ -n "$wt" ] || continue
+          printf '%s\n' "$have" | grep -Fqx "$wt" && continue
+          pane=$(tmux split-window -t "$t" -c "$wt" -P -F '#{pane_id}' lazygit)
+          tmux set-option -p -t "$pane" @sprig_wt "$wt"
+        done
+        tmux set-window-option -t "$t" main-pane-width 50%
+        tmux select-layout -t "$t" main-vertical
+        tmux select-pane -t "$t.0"
+        if [ -n "$TMUX" ]; then tmux switch-client -t "=$s"
+        elif [ -t 0 ]; then tmux attach -t "=$s"
+        else echo "tmux session $s is ready: tmux attach -t $s" >&2
+        fi
+
+# Start profiles to run when no +name is given. `--no-start` skips them for one call.
+autostart: [tmux]
