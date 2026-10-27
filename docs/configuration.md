@@ -11,7 +11,7 @@ wag uses the first of these that applies:
 3. `~/.config/wag/config.yaml`. On Windows that is `%USERPROFILE%\.config\wag\config.yaml`.
 
 `wag --help` prints the file it uses. Without a file, wag uses `~/projects` and no hooks.
-Ready-made files are in [examples/](../examples): `minimal.yaml`, `config.yaml` and `tmux-windows.yaml`.
+Ready-made files are in [examples/](../examples): `minimal.yaml` and `config.yaml`.
 
 ## Overview
 
@@ -77,7 +77,8 @@ The command's output goes to stderr, so it never mixes with the path wag prints.
 
 | Variable | Value |
 |---|---|
-| `WAG_FEATURE` | The feature name, which is also the branch name. |
+| `WAG_FEATURE` | The feature name. |
+| `WAG_BRANCH` | The branch name in every repo. It is the same as the feature name. |
 | `WAG_REPO` | The repo name. |
 | `WAG_WORKTREE` | The worktree's full path. |
 | `WAG_MAIN` | The main checkout's full path. |
@@ -129,6 +130,7 @@ Start profiles open your tools. Unlike hooks, they:
 | Variable | Value |
 |---|---|
 | `WAG_FEATURE` | The feature name. |
+| `WAG_BRANCH` | The branch name, the same as the feature name. |
 | `WAG_FEATURE_DIR` | The feature folder's full path. |
 | `WAG_REPOS` | The repos named in this call, one per line. |
 | `WAG_WORKTREES` | Their worktree paths, one per line, in the same order. |
@@ -146,7 +148,7 @@ start:
 autostart: [code]
 ```
 
-The tmux setup with Copilot and lazygit is in [tmux.md](tmux.md).
+An example that opens an AI agent and lazygit in tmux is in [tmux.md](tmux.md); more about agents in [agents.md](agents.md).
 
 ## Windows
 

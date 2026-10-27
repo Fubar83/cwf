@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { parse as parseYaml } from "yaml";
 
-const WAG = join(import.meta.dirname, "..", "src", "wag.mjs");
+const WAG = join(import.meta.dirname, "..", "bin", "wag.js");
 const slash = (p) => p.replaceAll("\\", "/");
 
 const git = (cwd, ...args) =>
@@ -117,7 +117,7 @@ test("listing shows features and their worktrees", () => {
 
 test("invalid names are refused and leave nothing behind", () => {
   const s = setup();
-  for (const bad of ["bad name", "a..b", "a~b"]) {
+  for (const bad of ["bad name", "a..b", "a~b", "feat/login"]) {
     const r = s.wag(bad, "app");
     assert.equal(r.code, 1, bad);
     assert.match(r.err, /invalid feature name/, bad);
@@ -273,13 +273,13 @@ test("run hooks get WAG_* variables, and their output never reaches stdout", () 
   const s = setup(`repos:
   app:
     create:
-      - run: node -e "console.log('noise'); require('fs').writeFileSync('ran.txt', process.env.WAG_FEATURE + ' ' + process.env.WAG_REPO)"
+      - run: node -e "console.log('noise'); require('fs').writeFileSync('ran.txt', process.env.WAG_FEATURE + ' ' + process.env.WAG_REPO + ' ' + process.env.WAG_BRANCH)"
 `);
   const r = s.wag("feature-a", "app");
   assert.equal(r.code, 0, r.err);
   assert.equal(r.out, s.wt(), "stdout must be only the path");
   assert.match(r.err, /noise/);
-  assert.equal(readFileSync(join(r.out, "ran.txt"), "utf8"), "feature-a app");
+  assert.equal(readFileSync(join(r.out, "ran.txt"), "utf8"), "feature-a app feature-a");
 });
 
 test("a failing create hook rolls everything back", () => {
@@ -375,7 +375,10 @@ autostart: [record]
   const r = s.wag("feature-a", "app", "web");
   assert.equal(r.code, 0, r.err);
   assert.equal(r.out, join(s.projects, "feature-a"), "stdout must be only the path");
-  assert.equal(readFileSync(out, "utf8"), `feature-a;app,web;${join(s.projects, "feature-a")}`);
+  const [feature, repos, cwd] = readFileSync(out, "utf8").split(";");
+  assert.deepEqual([feature, repos], ["feature-a", "app,web"]);
+  // Compare real paths: on macOS the temp folder is behind a symlink.
+  assert.equal(realpathSync(cwd), realpathSync(join(s.projects, "feature-a")));
 });
 
 test("+profile picks start profiles instead of autostart, and --no-start skips them", () => {
@@ -455,7 +458,7 @@ function runScripts(cfg) {
 
 test("every example config is valid", () => {
   const files = readdirSync(join(ROOT, "examples")).filter((f) => f.endsWith(".yaml"));
-  assert.ok(files.length >= 3);
+  assert.ok(files.length >= 2);
   for (const f of files) {
     const r = validate(readFileSync(join(ROOT, "examples", f), "utf8").replace(/\r/g, ""));
     assert.equal(r.status, 0, `${f}: ${r.stderr}`);
@@ -478,7 +481,7 @@ test("the tmux scripts in docs/tmux.md are the tested ones from examples/", () =
     .flatMap((f) => runScripts(parseYaml(readFileSync(join(ROOT, "examples", f), "utf8"))));
   const docScripts = yamlBlocks(readFileSync(join(ROOT, "docs", "tmux.md"), "utf8").replace(/\r/g, ""))
     .flatMap((b) => runScripts(parseYaml(b)));
-  assert.ok(docScripts.length >= 4);
+  assert.ok(docScripts.length >= 1);
   for (const s of docScripts) assert.ok(examples.includes(s), `not in examples/:\n${s}`);
 });
 
@@ -490,4 +493,11 @@ test("a repo can live outside the projects folder via path", () => {
   const r = s.wag("feature-a", "ext");
   assert.equal(r.code, 0, r.err);
   assert.equal(r.out, join(s.projects, "feature-a", "ext-feature-a"));
+});
+
+test("--version prints the version from package.json", () => {
+  const { version } = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  const r = spawnSync(process.execPath, [WAG, "--version"], { encoding: "utf8" });
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout.trim(), version);
 });

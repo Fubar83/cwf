@@ -15,17 +15,6 @@ hooks:
   create:
     - copy: .env            # the main checkout's local .env, if it has one
       optional: true
-  remove:
-    # Close this worktree's lazygit pane in the feature's tmux session (see start.tmux below).
-    # Never closes the pane you are running wag from, and does nothing when tmux is not running.
-    - run: |
-        command -v tmux >/dev/null 2>&1 || exit 0
-        tmux has-session -t "=$WAG_FEATURE" 2>/dev/null || exit 0
-        tmux list-panes -s -t "=$WAG_FEATURE" -F '#{pane_id} #{@wag_wt}' | while read -r id wt; do
-          [ "$wt" = "$WAG_WORKTREE" ] && [ "$id" != "$TMUX_PANE" ] && tmux kill-pane -t "$id"
-        done
-        tmux select-layout -t "=$WAG_FEATURE:" main-vertical 2>/dev/null
-        exit 0
 
 repos:
   repo1:
@@ -38,31 +27,23 @@ repos:
     remove:
       - run: docker compose down
 
-# Start profiles run once per call for the whole feature, in the printed path:
-# the worktree for one repo, the feature folder for several.
+# Start profiles run once per call for the whole feature.
 # Pick profiles per call with +name, e.g. `wag feature-a repo1 repo2 +tmux`.
 start:
-  # One tmux session per feature: Copilot on the left half, working on all repos from the feature folder;
-  # one lazygit per repo stacked on the right half. Calling again attaches; a newly added repo gets its own lazygit.
-  # Needs tmux 3.2 or later.
+  # A tmux session named after the branch, with two panes side by side, both in the feature folder:
+  # your AI agent on the left half and lazygit on the right half. Calling again attaches to it.
+  # Set "agent" to your agent's command. Needs tmux 3.2 or later.
   tmux:
     - run: |
-        s="$WAG_FEATURE"
-        t="=$s:"
+        agent="copilot"   # your agent's command, e.g. claude, codex, gemini or aider
+        # tmux turns "." and ":" in session names into "_", so do the same to find the session again.
+        s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
         if ! tmux has-session -t "=$s" 2>/dev/null; then
           tmux new-session -d -s "$s" -c "$WAG_FEATURE_DIR" \
-            -e WAG_FEATURE="$s" -e WAG_FEATURE_DIR="$WAG_FEATURE_DIR" copilot
+            -e WAG_FEATURE="$WAG_FEATURE" -e WAG_BRANCH="$WAG_BRANCH" -e WAG_FEATURE_DIR="$WAG_FEATURE_DIR" "$agent"
+          tmux split-window -h -l 50% -t "=$s:" -c "$WAG_FEATURE_DIR" lazygit
+          tmux select-pane -t "=$s:.0"
         fi
-        have=$(tmux list-panes -t "$t" -F '#{@wag_wt}')
-        printf '%s\n' "$WAG_WORKTREES" | while IFS= read -r wt; do
-          [ -n "$wt" ] || continue
-          printf '%s\n' "$have" | grep -Fqx "$wt" && continue
-          pane=$(tmux split-window -t "$t" -c "$wt" -P -F '#{pane_id}' lazygit)
-          tmux set-option -p -t "$pane" @wag_wt "$wt"
-        done
-        tmux set-window-option -t "$t" main-pane-width 50%
-        tmux select-layout -t "$t" main-vertical
-        tmux select-pane -t "$t.0"
         if [ -n "$TMUX" ]; then tmux switch-client -t "=$s"
         elif [ -t 0 ]; then tmux attach -t "=$s"
         else echo "tmux session $s is ready: tmux attach -t $s" >&2

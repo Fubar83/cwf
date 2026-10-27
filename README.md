@@ -1,8 +1,8 @@
 # wag
 
 **W**orktrees, **A**gents, **G**it. One command gives a feature its own folder, with a git worktree per repo,
-all on a branch with the feature's name. Hooks bring in your local files; start profiles open your tools,
-such as a tmux session with Copilot and lazygit.
+all on a branch with the feature's name. Run any AI agent, editor or tool in it: wag only manages the worktrees
+and branches, and runs the hooks and start commands you configure.
 
 ```text
 ~/projects/
@@ -14,31 +14,50 @@ such as a tmux session with Copilot and lazygit.
 ```
 
 ```bash
-wag feature-a api web          # create the worktrees, open your tools, print the feature folder
+wag feature-a api web          # create the worktrees, run your start profiles, print the feature folder
 wag feature-a api              # one repo: prints its worktree, so cd "$(wag feature-a api)" works
 wag                            # list features
 wag feature-a --rm             # remove the feature's worktrees (branches are kept)
 ```
 
+## Requirements
+
+- **git 2.17 or later**, able to fetch from your repos' `origin` remotes (SSH keys or a credential helper,
+  whatever you already use). wag runs `git fetch`; pushing is up to you.
+- **Node.js 22 or later**, because wag is a Node script.
+
+That is all. wag's only package dependency, `yaml`, is installed with it. Anything else, such as tmux, lazygit
+or an AI agent CLI, is only needed if your own config starts it.
+
 ## Install
+
+```bash
+npm install --global @fub4r/wag
+```
+
+Or from source:
 
 ```bash
 git clone https://github.com/Fubar83/wag.git
 cd wag
-pnpm run global
-mkdir -p ~/.config/wag && cp examples/minimal.yaml ~/.config/wag/config.yaml   # then edit it
+pnpm run global                       # or: npm install && npm install --global .
 ```
 
-If pnpm's global bin folder is not on your PATH yet, run `pnpm setup` once and open a new terminal.
-Requires Node 22+ and git. Works on Windows, Linux and macOS; the tmux setup needs Linux, macOS or WSL.
+With pnpm, if its global bin folder is not on your PATH yet, run `pnpm setup` once and open a new terminal.
+wag works on Windows, Linux and macOS.
+
+Then create your config from one of the [examples](examples), for example
+[minimal.yaml](examples/minimal.yaml), as `~/.config/wag/config.yaml`. `wag --help` shows the path it reads.
 
 ## Documentation
 
-- [Using wag](docs/usage.md): the layout, every command, a full session with real output, and what wag guarantees.
-- [Configuration](docs/configuration.md): the config file, hooks that copy local files or run commands, start profiles.
-- [tmux](docs/tmux.md): two ready-made layouts with Copilot and lazygit, and how to change them.
-- [Copilot](docs/copilot.md): one Copilot for all repos or one per repo, and Copilot hooks in your home folder.
-- [Examples](examples): `minimal.yaml`, `config.yaml` (with tmux Layout A) and `tmux-windows.yaml` (Layout B).
+- [Using wag](docs/usage.md): the layout, every command, a full session with real output, staying in sync with
+  origin and handling merge conflicts, and what wag guarantees.
+- [Configuration](docs/configuration.md): the config file in your home folder, hooks that copy local files or run
+  commands, and start profiles.
+- [Agents](docs/agents.md): running AI agent CLIs on a whole feature or on one repo.
+- [tmux](docs/tmux.md): an example tmux session per feature, with an agent and lazygit side by side.
+- [Examples](examples): `minimal.yaml` (works everywhere) and `config.yaml` (with the tmux example).
 
 ## In short
 
@@ -48,13 +67,13 @@ Requires Node 22+ and git. Works on Windows, Linux and macOS; the tmux setup nee
 - **All or nothing.** If one repo fails, everything that call created is rolled back. Removing checks every
   worktree before removing any.
 - **Local files stay local.** Files copied in by hooks are excluded from git, so they are never committed.
-- **Everything is configured in your home folder**, in `~/.config/wag/config.yaml`. Nothing is needed in the repos.
+- **Configured in your home folder**, in `~/.config/wag/config.yaml`. Nothing is needed in the repos.
 
 ## Development
 
 ```bash
-pnpm install
-pnpm test
+pnpm install      # or npm install
+pnpm test         # or npm test
 ```
 
 The tests run wag against real local git repos with bare origins, and check that every config in `examples/`

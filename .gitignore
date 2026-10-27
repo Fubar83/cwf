@@ -1,2 +1,6 @@
 node_modules/
-*.tmp
+*.log
+*.tgz
+.DS_Store
+# The repo's lockfile is pnpm-lock.yaml; npm installs from source should not add another.
+package-lock.json

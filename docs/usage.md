@@ -75,7 +75,7 @@ Run it with a new repo, such as `wag feature-a docs`, to add that repo to the fe
 
 ```bash
 cd "$(wag feature-a api)"
-copilot                        # or your editor, or a start profile that opens everything (see tmux.md)
+# start your AI agent or editor here, or let a start profile do it (see agents.md)
 git commit -am "Add the thing"
 git push                       # goes to origin/feature-a
 gh pr create --fill --draft
@@ -120,7 +120,7 @@ git fetch && git merge origin/main   # bring in the latest main (use your defaul
 
 If a merge or pull stops with conflicts, resolve them in the worktree like in any checkout: fix the files,
 `git add` them and `git commit` (or `git merge --abort` to back out). lazygit shows conflicted files and lets you
-pick sides, and Copilot can help with the edits. wag never rebases or force-pushes, so it never rewrites
+pick sides, and your AI agent can help with the edits. wag never rebases or force-pushes, so it never rewrites
 commits that are already on origin.
 
 If wag stops because the local branch and origin have **diverged**, the branch has no worktree yet, so reconcile it
@@ -139,7 +139,7 @@ wag feature-a api                          # now works
 
 - **Nothing is guessed.** wag stops with an error, and changes nothing, when:
   - a repo has no `origin` remote, or `git fetch` fails;
-  - a feature or repo name is not a valid branch name (for example `bad name`);
+  - a feature or repo name is not a valid branch name (for example `bad name`), or contains a slash;
   - the feature's branch is checked out somewhere else, such as in the main checkout;
   - the local branch and `origin/<feature>` have diverged (if the local branch is only behind, it is fast-forwarded);
   - the feature name is the name of a repository folder;
@@ -154,5 +154,5 @@ wag feature-a api                          # now works
 
 ```text
 $ wag "bad name" api
-wag: invalid feature name "bad name". Use letters, digits, dashes and dots, no spaces.
+wag: invalid feature name "bad name". Use letters, digits, dashes and dots, no spaces or slashes.
 ```

@@ -31,6 +31,7 @@ const fail = (msg) => {
   throw new WagError(msg);
 };
 const info = (msg) => console.error(msg);
+const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 // ───────────────────────── git ─────────────────────────
 
@@ -170,8 +171,8 @@ function inside(parent, p) {
 }
 
 function checkName(kind, name) {
-  if (!name || name.startsWith("-") || !gitOk(homedir(), "check-ref-format", "--branch", name)) {
-    fail(`invalid ${kind} name "${name}". Use letters, digits, dashes and dots, no spaces.`);
+  if (!name || name.startsWith("-") || name.includes("/") || !gitOk(homedir(), "check-ref-format", "--branch", name)) {
+    fail(`invalid ${kind} name "${name}". Use letters, digits, dashes and dots, no spaces or slashes.`);
   }
 }
 
@@ -268,7 +269,7 @@ function runHooks(cfg, event, ctx) {
   const steps = [...cfg.hooks[event], ...(cfg.repos[ctx.repo]?.[event] ?? [])];
   if (!steps.length) return;
   info(`${event} hooks for ${ctx.repo}-${ctx.feature}:`);
-  const env = { WAG_FEATURE: ctx.feature, WAG_REPO: ctx.repo, WAG_WORKTREE: ctx.wt, WAG_MAIN: ctx.main };
+  const env = { WAG_FEATURE: ctx.feature, WAG_BRANCH: ctx.feature, WAG_REPO: ctx.repo, WAG_WORKTREE: ctx.wt, WAG_MAIN: ctx.main };
   for (const step of steps) {
     if (step.run !== undefined) runCommand(step.run, ctx.wt, env);
     else copyStep(step, ctx);
@@ -282,6 +283,7 @@ function runHooks(cfg, event, ctx) {
 function runStart(cfg, names, ctx) {
   const env = {
     WAG_FEATURE: ctx.feature,
+    WAG_BRANCH: ctx.feature,
     WAG_FEATURE_DIR: ctx.featureDir,
     WAG_REPOS: ctx.repos.join("\n"),
     WAG_WORKTREES: ctx.worktrees.join("\n"),
@@ -427,12 +429,17 @@ Usage:
   wag <feature> <repo>... --no-start   same, without running any start profile
   wag <feature> [<repo>...] --rm       remove the worktrees (all of the feature's if no repo is given);
                                          --force discards uncommitted changes and ignores failing hooks
+  wag --version                          print the version
 
 Config: ${configFile()}`;
 
 const FLAGS = ["--rm", "--force", "--no-start"];
 
 function main(argv) {
+  if (argv.includes("--version") || argv.includes("-v")) {
+    console.log(VERSION);
+    return 0;
+  }
   if (argv.includes("--help") || argv.includes("-h")) {
     console.log(usage());
     return 0;

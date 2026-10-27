@@ -1,17 +1,48 @@
 {
-  "name": "wag",
+  "name": "@fub4r/wag",
   "version": "0.1.0",
-  "description": "Worktrees, Agents, Git: feature worktrees across repos, with hooks and start profiles.",
+  "description": "Worktrees, Agents, Git: one command gives a feature a git worktree per repo, on a same-named branch, with hooks and start profiles",
+  "keywords": [
+    "git",
+    "worktree",
+    "worktrees",
+    "branch",
+    "feature",
+    "multi-repo",
+    "agent",
+    "ai",
+    "tmux",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": "Henrik Johansson (https://github.com/Fubar83)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Fubar83/wag.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Fubar83/wag/issues"
+  },
+  "homepage": "https://github.com/Fubar83/wag#readme",
   "type": "module",
-  "bin": {
-    "wag": "./src/wag.mjs"
-  },
-  "scripts": {
-    "test": "node --test \"test/*.test.mjs\"",
-    "global": "pnpm install && pnpm add --global ."
-  },
   "engines": {
     "node": ">=22"
+  },
+  "bin": {
+    "wag": "bin/wag.js"
+  },
+  "files": [
+    "bin",
+    "examples",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "node --test",
+    "prepublishOnly": "node --test",
+    "global": "pnpm install && pnpm add --global ."
   },
   "dependencies": {
     "yaml": "^2.9.0"

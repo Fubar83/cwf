@@ -1,0 +1,3 @@
+# LF everywhere, also on Windows checkouts: npm rewrites the bin script's line endings when it
+# installs, which would otherwise show the file as modified in a fresh clone.
+* text=auto eol=lf
