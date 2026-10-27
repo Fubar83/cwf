@@ -58,6 +58,9 @@ test("the full flow: question, plan, build, draft PR", async () => {
   // The branch is pushed to origin with the commit
   const remoteLog = sh(`git --git-dir=${sb.origin("api")} log --oneline ${BRANCH}`);
   assert.match(remoteLog, /feat: csv export/);
+  // The local branch pushes to the same-named branch on origin
+  const upstream = sh(`git -C ${join(sb.cfg.projectsDir, "vfs-1350", "api")} config branch.${BRANCH}.merge`).trim();
+  assert.equal(upstream, `refs/heads/${BRANCH}`);
   // PR created as a draft with a Jira link; the agent did no push or PR itself
   const gh = sb.ghLog();
   assert.ok(gh.some((l) => l.startsWith("pr create --draft")));

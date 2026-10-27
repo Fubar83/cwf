@@ -33,6 +33,13 @@ wt feature-a repo1 --rm       # remove it; refuses if there are uncommitted chan
 The branch is kept on removal. `WT_PROJECTS` sets the projects folder (default `~/projects`).
 Only the path goes to stdout; messages go to stderr.
 
+Rules, so nothing fails halfway:
+- The branch has the same name locally and on origin, so a plain `git push` from the worktree updates `origin/<feature>`.
+- An existing `origin/<feature>` is picked up, not recreated from main.
+- Stops with an error, and changes nothing, when: origin is missing or cannot be fetched, the name is invalid,
+  the branch is checked out elsewhere, or the local branch has diverged from origin.
+- A create that fails midway is rolled back.
+
 ## Commands
 
 | Command | What it does |

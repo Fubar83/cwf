@@ -6,6 +6,12 @@
 //   wt <feature> <repo>         create the worktree if missing, then print its path
 //   wt <feature> <repo> --rm    remove that worktree (--force discards uncommitted changes)
 //
+// Rules:
+//   - A feature's branch has the same name locally and on origin: <repo> tracks origin/<feature>.
+//   - Nothing is guessed. A missing origin, a failed fetch, an invalid name, a branch checked out
+//     elsewhere, or a local branch that has diverged from origin all stop with an error.
+//   - A failed create is rolled back, so no half-made worktree or branch is left behind.
+//
 // Only the path goes to stdout, so `cd "$(wt feature-a repo1)"` works. Messages go to stderr.
 // Layout: <projects>/<repo> is the main checkout, <projects>/<feature>/<repo>-<feature> the worktree.
 // <projects> is $WT_PROJECTS, default ~/projects. Uses git only; never copies a repo.
@@ -17,78 +23,131 @@ import { join } from "node:path";
 
 const projects = process.env.WT_PROJECTS ?? join(homedir(), "projects");
 
+class WtError extends Error {}
+const fail = (msg) => {
+  throw new WtError(msg);
+};
+
 function git(cwd, ...args) {
-  return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  try {
+    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  } catch (e) {
+    const detail = String(e.stderr ?? e.message).trim();
+    throw new WtError(`git ${args.join(" ")} failed: ${detail}`);
+  }
 }
 
 function gitOk(cwd, ...args) {
   try {
-    git(cwd, ...args);
+    execFileSync("git", args, { cwd, stdio: ["ignore", "ignore", "ignore"] });
     return true;
   } catch {
     return false;
   }
 }
 
-function die(msg) {
-  console.error(`wt: ${msg}`);
-  process.exit(1);
-}
-
 const info = (msg) => console.error(msg);
 const isDir = (p) => existsSync(p) && statSync(p).isDirectory();
 const worktreeOf = (feature, repo) => join(projects, feature, `${repo}-${feature}`);
 const hasWorktree = (feature, repo) => existsSync(join(worktreeOf(feature, repo), ".git"));
+const localRef = (b) => `refs/heads/${b}`;
+const remoteRef = (b) => `refs/remotes/origin/${b}`;
+
+/** Refuses names git would reject, and names that look like options. */
+function checkName(kind, name) {
+  if (!name || name.startsWith("-") || !gitOk(homedir(), "check-ref-format", "--branch", name)) {
+    fail(`invalid ${kind} name "${name}". Use letters, digits, dashes and dots, no spaces.`);
+  }
+}
 
 function mainCheckout(repo) {
   const dir = join(projects, repo);
-  if (!existsSync(join(dir, ".git"))) die(`${repo} is not a git repository in ${projects}`);
+  if (!gitOk(dir, "rev-parse", "--is-inside-work-tree")) fail(`${repo} is not a git repository in ${projects}`);
+  if (!gitOk(dir, "remote", "get-url", "origin")) fail(`${repo} has no "origin" remote. wt needs origin to keep branches in sync.`);
   return dir;
 }
 
-/** Where a new branch starts: origin's default branch if known, otherwise the main checkout's HEAD. */
-function baseRef(main) {
-  if (gitOk(main, "fetch", "--quiet", "origin") && gitOk(main, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD")) {
-    return "origin/HEAD";
+/** Fetches origin. A failed fetch is an error, never a silent fallback to a stale base. */
+function fetchOrigin(main) {
+  git(main, "fetch", "--quiet", "--prune", "origin");
+}
+
+/** origin's default branch, from origin/HEAD. Refuses if it cannot be determined. */
+function defaultBranch(main) {
+  if (!gitOk(main, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD")) {
+    gitOk(main, "remote", "set-head", "origin", "--auto");
   }
-  return "HEAD";
+  if (!gitOk(main, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD")) {
+    fail("cannot determine origin's default branch (git remote set-head origin --auto failed)");
+  }
+  return git(main, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").replace(/^origin\//, "");
+}
+
+/** Makes the local branch push to origin/<same name>, so `git push` never needs a refspec. */
+function trackSameName(main, branch) {
+  git(main, "config", `branch.${branch}.remote`, "origin");
+  git(main, "config", `branch.${branch}.merge`, localRef(branch));
+}
+
+function checkedOutElsewhere(main, branch) {
+  return git(main, "worktree", "list", "--porcelain").split("\n").includes(`branch ${localRef(branch)}`);
 }
 
 function create(feature, repo) {
+  checkName("feature", feature);
+  checkName("repo", repo);
   const main = mainCheckout(repo);
   const wt = worktreeOf(feature, repo);
-  if (existsSync(wt)) die(`${wt} exists but is not a worktree. Remove it by hand.`);
+  if (existsSync(wt)) fail(`${wt} already exists but is not a worktree. Remove it by hand.`);
+  fetchOrigin(main);
 
-  const branchExists = gitOk(main, "rev-parse", "--verify", "--quiet", `refs/heads/${feature}`);
-  if (git(main, "worktree", "list", "--porcelain").split("\n").includes(`branch refs/heads/${feature}`)) {
-    die(`branch ${feature} is already checked out in another worktree of ${repo}`);
+  if (checkedOutElsewhere(main, feature)) fail(`branch ${feature} is already checked out in another worktree of ${repo}`);
+
+  const localExists = gitOk(main, "rev-parse", "--verify", "--quiet", localRef(feature));
+  const remoteExists = gitOk(main, "rev-parse", "--verify", "--quiet", remoteRef(feature));
+  let fastForward = false;
+  if (localExists && remoteExists) {
+    const localIsBehind = gitOk(main, "merge-base", "--is-ancestor", localRef(feature), remoteRef(feature));
+    const remoteIsBehind = gitOk(main, "merge-base", "--is-ancestor", remoteRef(feature), localRef(feature));
+    if (!localIsBehind && !remoteIsBehind) {
+      fail(`local ${feature} and origin/${feature} have diverged in ${repo}. Reconcile them in ${main} first.`);
+    }
+    fastForward = localIsBehind && !remoteIsBehind;
   }
 
   mkdirSync(join(projects, feature), { recursive: true });
+  let createdBranch = false;
   try {
-    if (branchExists) git(main, "worktree", "add", wt, feature);
-    else git(main, "worktree", "add", "-b", feature, wt, baseRef(main));
+    if (localExists) {
+      git(main, "worktree", "add", wt, feature);
+    } else {
+      const start = remoteExists ? remoteRef(feature) : `${remoteRef(defaultBranch(main))}`;
+      git(main, "worktree", "add", "-b", feature, wt, start);
+      createdBranch = true;
+    }
+    trackSameName(main, feature);
+    if (fastForward) git(wt, "merge", "--ff-only", remoteRef(feature));
   } catch (e) {
-    // Leave nothing behind if git refused.
-    if (!existsSync(wt)) rmSync(join(projects, feature), { recursive: true, force: true });
-    die(`git worktree add failed:\n${e.stderr ?? e.message}`);
+    // Roll back: nothing half-made should remain.
+    if (existsSync(wt)) gitOk(main, "worktree", "remove", "--force", wt);
+    if (createdBranch) gitOk(main, "branch", "-D", feature);
+    if (!readdirSync(join(projects, feature)).length) rmSync(join(projects, feature), { recursive: true });
+    throw e;
   }
-  info(`Created ${repo}-${feature} on branch ${feature}.`);
+  info(`Created ${repo}-${feature} on branch ${feature}, tracking origin/${feature}.`);
   return wt;
 }
 
 function remove(feature, repo, force) {
-  if (!hasWorktree(feature, repo)) die(`no worktree for ${repo} in ${feature}`);
+  checkName("feature", feature);
+  checkName("repo", repo);
+  if (!hasWorktree(feature, repo)) fail(`no worktree for ${repo} in ${feature}`);
   const main = mainCheckout(repo);
   const wt = worktreeOf(feature, repo);
   if (!force && git(wt, "status", "--porcelain").length > 0) {
-    die(`${wt} has uncommitted changes. Commit them, or add --force to discard them.`);
+    fail(`${wt} has uncommitted changes. Commit them, or add --force to discard them.`);
   }
-  try {
-    git(main, "worktree", "remove", ...(force ? ["--force"] : []), wt);
-  } catch (e) {
-    die(`git worktree remove failed:\n${e.stderr ?? e.message}`);
-  }
+  git(main, "worktree", "remove", ...(force ? ["--force"] : []), wt);
   const fdir = join(projects, feature);
   if (readdirSync(fdir).length === 0) rmSync(fdir, { recursive: true });
   info(`Removed ${wt}. Branch ${feature} in ${repo} was kept.`);
@@ -96,7 +155,7 @@ function remove(feature, repo, force) {
 
 /** Worktrees of one feature, or of all features when feature is undefined. */
 function list(feature) {
-  if (!isDir(projects)) die(`${projects} does not exist`);
+  if (!isDir(projects)) fail(`${projects} does not exist`);
   const features = feature ? [feature] : readdirSync(projects).filter((f) => isDir(join(projects, f)) && !f.startsWith("."));
   let shown = false;
   for (const f of features.sort()) {
@@ -112,24 +171,33 @@ function list(feature) {
   if (!shown) console.log(feature ? `No worktrees for ${feature}.` : "No features yet. Create one with: wt <feature> <repo>");
 }
 
-const args = process.argv.slice(2);
-const rm = args.includes("--rm");
-const force = args.includes("--force");
-const [feature, repo, extra] = args.filter((a) => !a.startsWith("--"));
-
-if (extra !== undefined || (args.some((a) => a.startsWith("--")) && !rm && !force) || (rm && !repo) || (force && !rm)) {
-  console.error(`Usage:
+const USAGE = `Usage:
   wt                          list all features
   wt <feature>                list the worktrees of a feature
   wt <feature> <repo>         create the worktree if missing, then print its path
-  wt <feature> <repo> --rm    remove it (add --force to discard uncommitted changes)`);
-  process.exit(1);
+  wt <feature> <repo> --rm    remove it (add --force to discard uncommitted changes)`;
+
+function main() {
+  const args = process.argv.slice(2);
+  const rm = args.includes("--rm");
+  const force = args.includes("--force");
+  const unknown = args.filter((a) => a.startsWith("--") && a !== "--rm" && a !== "--force");
+  const [feature, repo, extra] = args.filter((a) => !a.startsWith("--"));
+
+  if (unknown.length || extra !== undefined || (force && !rm) || (rm && !repo) || (rm && !feature)) {
+    console.error(USAGE);
+    return 1;
+  }
+  if (!feature) list(undefined);
+  else if (!repo) list(feature);
+  else if (rm) remove(feature, repo, force);
+  else console.log(hasWorktree(feature, repo) ? worktreeOf(feature, repo) : create(feature, repo));
+  return 0;
 }
 
-if (!feature) list(undefined);
-else if (!repo) list(feature);
-else if (rm) remove(feature, repo, force);
-else {
-  const wt = hasWorktree(feature, repo) ? worktreeOf(feature, repo) : create(feature, repo);
-  console.log(wt);
+try {
+  process.exitCode = main();
+} catch (e) {
+  console.error(`wt: ${e instanceof WtError ? e.message : e.stack ?? e}`);
+  process.exitCode = 1;
 }

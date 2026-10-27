@@ -61,18 +61,39 @@ export async function ensureWorktree(cfg: Config, slug: string, repo: string, br
     if (current !== branch) {
       throw new Error(`${wt} is checked out on "${current}", expected "${branch}". Fix it manually.`);
     }
+    await trackSameName(main, branch);
     return wt;
   }
+  if (existsSync(wt)) throw new Error(`${wt} exists but is not a worktree. Remove it by hand.`);
 
   const base = await defaultBranch(main);
-  if (await branchExists(main, `refs/heads/${branch}`)) {
-    await git(main, "worktree", "add", wt, branch);
-  } else if (await branchExists(main, `refs/remotes/origin/${branch}`)) {
-    await git(main, "worktree", "add", "--track", "-b", branch, wt, `origin/${branch}`);
-  } else {
-    await git(main, "worktree", "add", "--no-track", "-b", branch, wt, `origin/${base}`);
+  const localExists = await branchExists(main, `refs/heads/${branch}`);
+  const remoteExists = await branchExists(main, `refs/remotes/origin/${branch}`);
+  let fastForward = false;
+  if (localExists && remoteExists) {
+    const localBehind = (await gitTry(main, "merge-base", "--is-ancestor", `refs/heads/${branch}`, `refs/remotes/origin/${branch}`)).code === 0;
+    const remoteBehind = (await gitTry(main, "merge-base", "--is-ancestor", `refs/remotes/origin/${branch}`, `refs/heads/${branch}`)).code === 0;
+    if (!localBehind && !remoteBehind) {
+      throw new Error(`Local ${branch} and origin/${branch} have diverged in ${main}. Reconcile them first.`);
+    }
+    fastForward = localBehind && !remoteBehind;
   }
+
+  if (localExists) await git(main, "worktree", "add", wt, branch);
+  else if (remoteExists) await git(main, "worktree", "add", "-b", branch, wt, `origin/${branch}`);
+  else await git(main, "worktree", "add", "-b", branch, wt, `origin/${base}`);
+  await trackSameName(main, branch);
+  if (fastForward) await git(wt, "merge", "--ff-only", `origin/${branch}`);
   return wt;
+}
+
+/**
+ * The local branch pushes to origin/<same name>. Set on every path, so a plain `git push`
+ * from the worktree never creates a differently named remote branch.
+ */
+async function trackSameName(main: string, branch: string): Promise<void> {
+  await git(main, "config", `branch.${branch}.remote`, "origin");
+  await git(main, "config", `branch.${branch}.merge`, `refs/heads/${branch}`);
 }
 
 export async function isDirty(wt: string): Promise<boolean> {
