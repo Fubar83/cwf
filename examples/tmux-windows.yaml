@@ -1,0 +1,45 @@
+# wag config: tmux with one window per repo (Linux, macOS or WSL, tmux 3.2 or later).
+# Each repo gets its own window in the feature's session, named after the repo:
+# Copilot on the left half working on that repo only, lazygit on the right half.
+# See docs/tmux.md.
+
+projects: ~/projects
+
+hooks:
+  remove:
+    # Close the repo's window, unless you are running wag from inside it.
+    - run: |
+        command -v tmux >/dev/null 2>&1 || exit 0
+        w="=$WAG_FEATURE:=$WAG_REPO"
+        if tmux list-panes -t "$w" -F '#{pane_id}' 2>/dev/null | grep -Fqx "${TMUX_PANE:-none}"; then
+          echo "Not closing tmux window $WAG_REPO: you are in it." >&2
+          exit 0
+        fi
+        tmux kill-window -t "$w" 2>/dev/null
+        exit 0
+
+start:
+  tmux:
+    - run: |
+        s="$WAG_FEATURE"
+        printf '%s\n' "$WAG_WORKTREES" | while IFS= read -r wt; do
+          [ -n "$wt" ] || continue
+          b=$(basename "$wt"); w=${b%-"$s"}
+          if ! tmux has-session -t "=$s" 2>/dev/null; then
+            tmux new-session -d -s "$s" -n "$w" -c "$wt" -e WAG_FEATURE="$s" copilot
+          elif tmux list-windows -t "=$s" -F '#W' | grep -Fqx "$w"; then
+            continue
+          else
+            tmux new-window -t "=$s:" -n "$w" -c "$wt" -e WAG_FEATURE="$s" copilot
+          fi
+          tmux split-window -h -l 50% -t "=$s:=$w" -c "$wt" lazygit
+          tmux select-pane -t "=$s:=$w.0"
+        done
+        first=$(basename "$(printf '%s\n' "$WAG_WORKTREES" | head -n 1)")
+        tmux select-window -t "=$s:=${first%-"$s"}"
+        if [ -n "$TMUX" ]; then tmux switch-client -t "=$s"
+        elif [ -t 0 ]; then tmux attach -t "=$s"
+        else echo "tmux session $s is ready: tmux attach -t $s" >&2
+        fi
+
+autostart: [tmux]

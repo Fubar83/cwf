@@ -1,5 +1,7 @@
-# wag config. Copy to ~/.config/wag/config.yaml (or point WAG_CONFIG at it).
+# wag config: a complete example for Linux, macOS or WSL.
+# Copy to ~/.config/wag/config.yaml (or point WAG_CONFIG at it).
 # Everything lives here in your home folder; wag never needs files in the repos themselves.
+# See docs/configuration.md for every option, and docs/tmux.md for the tmux setup.
 
 # Main checkouts live here, and each feature gets a folder here too:
 #   ~/projects/repo1                       main checkout
@@ -9,17 +11,21 @@ projects: ~/projects
 # Hooks for every repo. Global steps run first, then the repo's own.
 # create: after a worktree is made. If a step fails, the whole create is rolled back.
 # remove: before a worktree is removed. If a step fails, nothing is removed (unless --force).
-# Steps:
-#   - copy: <from>       a file or folder. Relative paths come from the repo's main checkout,
-#     to: <to>           ~ and absolute paths from anywhere. "to" is relative to the worktree.
-#     optional: true     skip silently if <from> does not exist
-#     overwrite: true    allow replacing a file that already exists in the worktree
-#   - run: <command>     runs in the worktree with WAG_FEATURE, WAG_REPO, WAG_WORKTREE, WAG_MAIN set
-# Copied files are added to the repo's local exclude list, so they are never committed.
 hooks:
   create:
     - copy: .env            # the main checkout's local .env, if it has one
       optional: true
+  remove:
+    # Close this worktree's lazygit pane in the feature's tmux session (see start.tmux below).
+    # Never closes the pane you are running wag from, and does nothing when tmux is not running.
+    - run: |
+        command -v tmux >/dev/null 2>&1 || exit 0
+        tmux has-session -t "=$WAG_FEATURE" 2>/dev/null || exit 0
+        tmux list-panes -s -t "=$WAG_FEATURE" -F '#{pane_id} #{@wag_wt}' | while read -r id wt; do
+          [ "$wt" = "$WAG_WORKTREE" ] && [ "$id" != "$TMUX_PANE" ] && tmux kill-pane -t "$id"
+        done
+        tmux select-layout -t "=$WAG_FEATURE:" main-vertical 2>/dev/null
+        exit 0
 
 repos:
   repo1:
@@ -34,12 +40,11 @@ repos:
 
 # Start profiles run once per call for the whole feature, in the printed path:
 # the worktree for one repo, the feature folder for several.
-# Variables: WAG_FEATURE, WAG_FEATURE_DIR, and newline-separated WAG_REPOS and WAG_WORKTREES.
 # Pick profiles per call with +name, e.g. `wag feature-a repo1 repo2 +tmux`.
 start:
   # One tmux session per feature: Copilot on the left half, working on all repos from the feature folder;
   # one lazygit per repo stacked on the right half. Calling again attaches; a newly added repo gets its own lazygit.
-  # Needs tmux 3.2 or later (Linux, macOS or WSL).
+  # Needs tmux 3.2 or later.
   tmux:
     - run: |
         s="$WAG_FEATURE"

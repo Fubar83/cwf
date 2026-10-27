@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { parse as parseYaml } from "yaml";
 
 const WAG = join(import.meta.dirname, "..", "src", "wag.mjs");
 const slash = (p) => p.replaceAll("\\", "/");
@@ -427,15 +428,58 @@ test("config errors are reported with their location", () => {
   }
 });
 
-test("the example config is valid", () => {
-  const example = join(import.meta.dirname, "..", "examples", "config.yaml");
-  const projects = mkdtempSync(join(tmpdir(), "wag-example-"));
-  // Point projects at an empty temp folder; everything else is the example as shipped.
+// ───────────────────────── examples and docs ─────────────────────────
+
+const ROOT = join(import.meta.dirname, "..");
+
+/** Runs `wag` (list) against a config text, with projects pointed at an empty temp folder. */
+function validate(text) {
+  const projects = mkdtempSync(join(tmpdir(), "wag-doc-"));
+  const line = `projects: '${slash(projects)}'`;
   const config = join(projects, "config.yaml");
-  writeFileSync(config, readFileSync(example, "utf8").replace(/^projects: .*$/m, `projects: '${slash(projects)}'`));
-  const r = spawnSync(process.execPath, [WAG], { env: { ...process.env, WAG_CONFIG: config }, encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /No features yet/);
+  writeFileSync(config, /^projects: .*$/m.test(text) ? text.replace(/^projects: .*$/m, line) : `${line}\n${text}`);
+  return spawnSync(process.execPath, [WAG], { env: { ...process.env, WAG_CONFIG: config }, encoding: "utf8" });
+}
+
+const yamlBlocks = (md) => [...md.matchAll(/```yaml\n([\s\S]*?)```/g)].map((m) => m[1]);
+
+/** Every run script in a parsed config, from hooks, repos and start profiles. */
+function runScripts(cfg) {
+  const steps = [
+    ...(cfg.hooks?.create ?? []), ...(cfg.hooks?.remove ?? []),
+    ...Object.values(cfg.repos ?? {}).flatMap((r) => [...(r?.create ?? []), ...(r?.remove ?? [])]),
+    ...Object.values(cfg.start ?? {}).flat(),
+  ];
+  return steps.filter((s) => s.run).map((s) => s.run.replace(/\r/g, "").trimEnd());
+}
+
+test("every example config is valid", () => {
+  const files = readdirSync(join(ROOT, "examples")).filter((f) => f.endsWith(".yaml"));
+  assert.ok(files.length >= 3);
+  for (const f of files) {
+    const r = validate(readFileSync(join(ROOT, "examples", f), "utf8").replace(/\r/g, ""));
+    assert.equal(r.status, 0, `${f}: ${r.stderr}`);
+    assert.match(r.stdout, /No features yet/, f);
+  }
+});
+
+test("every YAML block in the docs is a valid config", () => {
+  for (const f of readdirSync(join(ROOT, "docs")).filter((f) => f.endsWith(".md"))) {
+    yamlBlocks(readFileSync(join(ROOT, "docs", f), "utf8").replace(/\r/g, "")).forEach((block, i) => {
+      const r = validate(block);
+      assert.equal(r.status, 0, `${f} block ${i + 1}: ${r.stderr}`);
+    });
+  }
+});
+
+test("the tmux scripts in docs/tmux.md are the tested ones from examples/", () => {
+  const examples = readdirSync(join(ROOT, "examples"))
+    .filter((f) => f.endsWith(".yaml"))
+    .flatMap((f) => runScripts(parseYaml(readFileSync(join(ROOT, "examples", f), "utf8"))));
+  const docScripts = yamlBlocks(readFileSync(join(ROOT, "docs", "tmux.md"), "utf8").replace(/\r/g, ""))
+    .flatMap((b) => runScripts(parseYaml(b)));
+  assert.ok(docScripts.length >= 4);
+  for (const s of docScripts) assert.ok(examples.includes(s), `not in examples/:\n${s}`);
 });
 
 test("a repo can live outside the projects folder via path", () => {
