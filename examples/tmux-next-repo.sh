@@ -1,5 +1,5 @@
 #!/bin/sh
-# wag tmux example: show the next repo's lazygit and terminal on the right of the feature's main window.
+# wag tmux example: show the next repo's git pane and terminal on the right of the feature's main window.
 # The agent pane on the left never moves. Bound to "prefix g" by the tmux profile in examples/tmux-switch.yaml.
 # Copy this file to ~/.config/wag/tmux-next-repo.sh. Usage: tmux-next-repo.sh <tmux session name>
 

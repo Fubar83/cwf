@@ -33,6 +33,8 @@ the feature's name. Your main checkouts stay untouched, so you can work on sever
 | `wag <feature> --rm` | Removes all of the feature's worktrees. Branches are kept. |
 | `wag <feature> <repo>... --rm` | Removes only those worktrees. |
 | `--force` (with `--rm`) | Removes even with uncommitted changes, and ignores failing remove hooks. |
+| `wag <feature> [<repo>...] --merge` | Merges origin's default branch into the worktrees. Run it again after resolving conflicts to finish. |
+| `wag <feature> [<repo>...] --merge --abort` | Backs out the merges in progress. |
 | `wag --help` | Shows usage and which config file is used. |
 
 The printed path is the worktree when you name one repo, and the feature folder when you name several.
@@ -97,7 +99,59 @@ wag checks every worktree before removing any of them, so a refusal never leaves
 The branch is always kept, because it may hold commits you have not pushed. Delete it yourself with
 `git branch -d feature-a` in the main checkout once it is merged.
 
-## When origin moves on, and merge conflicts
+## Keeping up with main, and resolving conflicts
+
+### Bringing in the latest main
+
+`wag feature-a --merge` merges origin's default branch, such as `origin/main`, into every worktree of the feature
+(or only the repos you name: `wag feature-a api --merge`):
+
+1. It fetches every repo and checks them all first. If any repo has uncommitted changes, it stops before merging
+   anything, so a feature is never half merged because of a forgotten file.
+2. It merges each repo that is behind, and says which ones are already up to date.
+3. A repo with conflicts is left mid-merge, with the conflicted files listed. The other repos are still merged.
+
+This is real output, for a feature where `api` has a conflict and `web` merges cleanly:
+
+```text
+$ wag feature-a --merge
+api: conflicts in 1 file(s), in ~/projects/feature-a/api-feature-a:
+    Program.cs
+web: merged origin/main
+
+Resolve the conflicts (or ask your agent to), git add the files, then run: wag feature-a --merge
+To undo the merges instead: wag feature-a --merge --abort
+```
+
+### Resolving conflicts
+
+Resolve the listed files in the worktree, or ask your AI agent to, and `git add` them. Then run the same command
+again; it finishes every merge whose conflicts are resolved, and lists what is still left:
+
+```text
+$ wag feature-a --merge
+api: merge finished
+web: already up to date with origin/main
+```
+
+- `wag feature-a --merge --abort` backs out every merge in progress instead, and leaves the branches as they were.
+- The exit code is `1` while conflicts are left, and `0` when everything is merged.
+- wag merges, and never rebases or force-pushes, so commits that are already on origin are never rewritten.
+  After merging, a plain `git push` from the worktree publishes the merge.
+- In a [git pane](tmux.md#the-git-pane), conflicted files show as `UU`, and a hint appears when origin's default
+  branch has commits you have not merged yet. With [delta](tmux.md#reading-diffs-delta) and
+  `conflictStyle = zdiff3`, `git diff` shows conflicts clearly.
+
+### A teammate's commits on the same branch
+
+When someone else pushes to `origin/feature-a`, take their commits in the worktree with plain git:
+
+```bash
+cd "$(wag feature-a api)"
+git pull --no-rebase
+```
+
+### What wag does when it creates a worktree
 
 wag fetches and checks the branch **when it creates a worktree**:
 
@@ -108,20 +162,6 @@ wag fetches and checks the branch **when it creates a worktree**:
 | local and ahead of origin | uses it as it is; `git push` sends your commits |
 | local and diverged from origin | stops, and changes nothing |
 | nowhere yet | creates it from origin's default branch |
-
-Once the worktree exists, wag leaves the branch alone: calling `wag feature-a api` again only prints the path.
-Keeping it up to date is plain git, in the worktree:
-
-```bash
-cd "$(wag feature-a api)"
-git pull --ff-only             # take a teammate's new commits on origin/feature-a
-git fetch && git merge origin/main   # bring in the latest main (use your default branch's name)
-```
-
-If a merge or pull stops with conflicts, resolve them in the worktree like in any checkout: fix the files,
-`git add` them and `git commit` (or `git merge --abort` to back out). lazygit shows conflicted files and lets you
-pick sides, and your AI agent can help with the edits. wag never rebases or force-pushes, so it never rewrites
-commits that are already on origin.
 
 If wag stops because the local branch and origin have **diverged**, the branch has no worktree yet, so reconcile it
 with a temporary one:

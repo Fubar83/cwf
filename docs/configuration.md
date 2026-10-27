@@ -11,7 +11,7 @@ wag uses the first of these that applies:
 3. `~/.config/wag/config.yaml`. On Windows that is `%USERPROFILE%\.config\wag\config.yaml`.
 
 `wag --help` prints the file it uses. Without a file, wag uses `~/projects` and no hooks.
-Ready-made files are in [examples/](../examples): `minimal.yaml`, `config.yaml`, `tmux-lazygit.yaml` and `tmux-switch.yaml`.
+Ready-made files are in [examples/](../examples): `minimal.yaml`, `config.yaml`, `tmux-per-repo.yaml` and `tmux-switch.yaml`.
 
 ## Overview
 
@@ -148,7 +148,7 @@ start:
 autostart: [code]
 ```
 
-An example that opens an AI agent and lazygit in tmux is in [tmux.md](tmux.md); more about agents in [agents.md](agents.md).
+Examples that open an AI agent and a live git view in tmux are in [tmux.md](tmux.md); more about agents in [agents.md](agents.md).
 
 ## Windows
 

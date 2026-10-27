@@ -27,7 +27,7 @@ start:
 autostart: [agent]
 ```
 
-The [tmux example](tmux.md) opens one agent for all repos in a tmux session, next to lazygit.
+The [tmux examples](tmux.md) open one agent for all repos in a tmux session, next to a live git view.
 
 ## What the agent gets from wag
 

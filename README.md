@@ -17,6 +17,7 @@ and branches, and runs the hooks and start commands you configure.
 wag feature-a api web          # create the worktrees, run your start profiles, print the feature folder
 wag feature-a api              # one repo: prints its worktree, so cd "$(wag feature-a api)" works
 wag                            # list features
+wag feature-a --merge          # bring in the latest main; after resolving conflicts, run it again
 wag feature-a --rm             # remove the feature's worktrees (branches are kept)
 ```
 
@@ -55,16 +56,18 @@ Then create your config from one of the [examples](examples), for example
 - [Configuration](docs/configuration.md): the config file in your home folder, hooks that copy local files or run
   commands, and start profiles.
 - [Agents](docs/agents.md): running AI agent CLIs on a whole feature or on one repo.
-- [tmux](docs/tmux.md): example tmux sessions per feature, with an agent and lazygit side by side.
-- [Examples](examples): `minimal.yaml` (works everywhere), `config.yaml` (tmux with two panes),
-  `tmux-lazygit.yaml` (tmux with one lazygit per repo) and `tmux-switch.yaml` (tmux with one repo at a time and a
-  terminal; uses `tmux-next-repo.sh`).
+- [tmux](docs/tmux.md): a tmux session per feature with your agent and a live git pane, in three layouts.
+- [Examples](examples): `minimal.yaml` (works everywhere), `config.yaml` (tmux: agent and a git view of the whole
+  feature), `tmux-per-repo.yaml` (a git pane per repo), `tmux-switch.yaml` (one repo at a time, with a terminal),
+  and the scripts they use: `git-view.sh` (a live, read-only git view) and `tmux-next-repo.sh`.
 
 ## In short
 
 - **Same branch name everywhere**, tracking `origin/<feature>`, so a plain `git push` just works.
 - **Nothing is guessed.** A missing origin, a failed fetch, a bad name, a branch checked out elsewhere,
   a diverged branch or a config mistake stops wag before it changes anything.
+- **Merging main is one command.** `wag feature-a --merge` checks every repo first, merges, lists conflicts, and
+  finishes once you have resolved them.
 - **All or nothing.** If one repo fails, everything that call created is rolled back. Removing checks every
   worktree before removing any.
 - **Local files stay local.** Files copied in by hooks are excluded from git, so they are never committed.

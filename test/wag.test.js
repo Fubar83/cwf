@@ -8,6 +8,8 @@ import { parse as parseYaml } from "yaml";
 
 const WAG = join(import.meta.dirname, "..", "bin", "wag.js");
 const slash = (p) => p.replaceAll("\\", "/");
+// Merge commits need a git identity; CI machines have none configured.
+const IDENTITY = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
 
 const git = (cwd, ...args) =>
   execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -35,7 +37,7 @@ function setup(config = "", repos = ["app"]) {
   writeFileSync(configFile, `projects: '${slash(projects)}'\n${config}`);
   const wag = (...args) => {
     const r = spawnSync(process.execPath, [WAG, ...args], {
-      env: { ...process.env, WAG_CONFIG: configFile },
+      env: { ...process.env, WAG_CONFIG: configFile, ...IDENTITY },
       encoding: "utf8",
     });
     return { code: r.status, out: r.stdout.trim(), err: r.stderr.trim() };
@@ -500,4 +502,147 @@ test("--version prints the version from package.json", () => {
   const r = spawnSync(process.execPath, [WAG, "--version"], { encoding: "utf8" });
   assert.equal(r.status, 0);
   assert.equal(r.stdout.trim(), version);
+});
+
+// ───────────────────────── merge ─────────────────────────
+
+/** Pushes a commit to origin/main of a repo, as a teammate would. */
+function pushToMain(s, repo, file, content, message) {
+  const other = mkdtempSync(join(s.root, `push-${repo}-`));
+  git(s.root, "clone", "-q", s.origin(repo), other);
+  writeFileSync(join(other, file), content);
+  git(other, "add", "-A");
+  git(other, "commit", "-q", "-m", message);
+  git(other, "push", "-q", "origin", "main");
+}
+
+/** Commits a change in a worktree, as the agent would. */
+function commitIn(path, file, content, message) {
+  writeFileSync(join(path, file), content);
+  git(path, "add", "-A");
+  git(path, "commit", "-q", "-m", message);
+}
+
+const mergeHead = (path) => {
+  try {
+    return git(path, "rev-parse", "-q", "--verify", "MERGE_HEAD");
+  } catch {
+    return "";
+  }
+};
+
+test("--merge brings in new commits from main, and says when it is up to date", () => {
+  const s = setup();
+  const path = s.wag("feature-a", "app").out;
+  pushToMain(s, "app", "new.txt", "from main\n", "New on main");
+
+  const r = s.wag("feature-a", "--merge");
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.err, /app: merged origin\/main/);
+  assert.ok(existsSync(join(path, "new.txt")));
+
+  const again = s.wag("feature-a", "--merge");
+  assert.equal(again.code, 0, again.err);
+  assert.match(again.err, /app: already up to date with origin\/main/);
+});
+
+test("--merge reports conflicts, and finishes after they are resolved", () => {
+  const s = setup();
+  const path = s.wag("feature-a", "app").out;
+  commitIn(path, "a.txt", "ours\n", "Change a on the feature");
+  pushToMain(s, "app", "a.txt", "theirs\n", "Change a on main");
+
+  const r = s.wag("feature-a", "--merge");
+  assert.equal(r.code, 1);
+  assert.match(r.err, /app: conflicts in 1 file\(s\)/);
+  assert.match(r.err, /    a\.txt/);
+  assert.match(r.err, /then run: wag feature-a --merge/);
+  assert.notEqual(mergeHead(path), "", "the merge stays in progress for resolving");
+
+  const unresolved = s.wag("feature-a", "--merge");
+  assert.equal(unresolved.code, 1);
+  assert.match(unresolved.err, /a\.txt/);
+
+  writeFileSync(join(path, "a.txt"), "resolved\n");
+  git(path, "add", "a.txt");
+  const done = s.wag("feature-a", "--merge");
+  assert.equal(done.code, 0, done.err);
+  assert.match(done.err, /app: merge finished/);
+  assert.equal(mergeHead(path), "");
+  assert.match(git(path, "log", "--oneline", "-1"), /Merge/);
+});
+
+test("--merge --abort backs out a merge in progress", () => {
+  const s = setup();
+  const path = s.wag("feature-a", "app").out;
+  commitIn(path, "a.txt", "ours\n", "Change a on the feature");
+  pushToMain(s, "app", "a.txt", "theirs\n", "Change a on main");
+  assert.equal(s.wag("feature-a", "--merge").code, 1);
+
+  const r = s.wag("feature-a", "--merge", "--abort");
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.err, /app: merge aborted/);
+  assert.equal(mergeHead(path), "");
+  assert.equal(readFileSync(join(path, "a.txt"), "utf8").replace(/\r/g, ""), "ours\n");
+});
+
+test("--merge checks every repo first: uncommitted changes stop it before anything is merged", () => {
+  const s = setup("", ["app", "web"]);
+  s.wag("feature-a", "app", "web");
+  pushToMain(s, "app", "new.txt", "from main\n", "New on main");
+  writeFileSync(join(s.wt("web"), "draft.txt"), "draft\n");
+  const before = git(s.wt("app"), "rev-parse", "HEAD");
+
+  const r = s.wag("feature-a", "--merge");
+  assert.equal(r.code, 1);
+  assert.match(r.err, /Nothing was merged/);
+  assert.equal(git(s.wt("app"), "rev-parse", "HEAD"), before);
+});
+
+test("--merge with several repos merges the clean ones and reports the conflicting one", () => {
+  const s = setup("", ["app", "web"]);
+  s.wag("feature-a", "app", "web");
+  commitIn(s.wt("app"), "a.txt", "ours\n", "Change a on the feature");
+  pushToMain(s, "app", "a.txt", "theirs\n", "Change a on main");
+  pushToMain(s, "web", "new.txt", "from main\n", "New on main");
+
+  const r = s.wag("feature-a", "--merge");
+  assert.equal(r.code, 1);
+  assert.match(r.err, /app: conflicts in 1 file\(s\)/);
+  assert.match(r.err, /web: merged origin\/main/);
+  assert.ok(existsSync(join(s.wt("web"), "new.txt")));
+});
+
+test("--merge and --abort are only valid in the right combinations", () => {
+  const s = setup();
+  assert.equal(s.wag("feature-a", "--abort").code, 1);
+  assert.equal(s.wag("feature-a", "--merge", "--rm").code, 1);
+  assert.equal(s.wag("--merge").code, 1);
+});
+
+// ───────────────────────── git view example ─────────────────────────
+
+const hasSh = spawnSync("sh", ["-c", "exit 0"]).status === 0;
+
+test("examples/git-view.sh shows branch, files and commits of a worktree", { skip: !hasSh && "no sh on PATH" }, () => {
+  const s = setup();
+  const path = s.wag("feature-a", "app").out;
+  commitIn(path, "csv.txt", "x\n", "Add CSV export");
+  writeFileSync(join(path, "staged.txt"), "s\n");
+  git(path, "add", "staged.txt");
+  writeFileSync(join(path, "a.txt"), "changed\n");
+
+  const view = join(ROOT, "examples", "git-view.sh");
+  const r = spawnSync("sh", [view, "--once", path], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  const out = r.stdout.replace(/\x1b\[[0-9;]*m/g, "");
+  assert.match(out, /## feature-a.*\(not pushed yet\)/);
+  assert.match(out, /^A  staged\.txt$/m);
+  assert.match(out, /^ M a\.txt$/m);
+  assert.match(out, /staged: 1 file changed/);
+  assert.match(out, /not staged: 1 file changed/);
+  assert.match(out, /Add CSV export/);
+
+  const feature = spawnSync("sh", [view, "--once", join(s.projects, "feature-a")], { encoding: "utf8" });
+  assert.match(feature.stdout.replace(/\x1b\[[0-9;]*m/g, ""), /^app-feature-a$/m);
 });

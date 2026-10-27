@@ -1,8 +1,8 @@
 # wag config: a complete example for Linux, macOS or WSL.
-# Copy to ~/.config/wag/config.yaml (or point WAG_CONFIG at it).
+# Copy to ~/.config/wag/config.yaml (or point WAG_CONFIG at it), and examples/git-view.sh to ~/.config/wag/git-view.sh.
 # Everything lives here in your home folder; wag never needs files in the repos themselves.
-# See docs/configuration.md for every option, and docs/tmux.md for the tmux setup
-# (examples/tmux-lazygit.yaml and examples/tmux-switch.yaml have other tmux layouts).
+# See docs/configuration.md for every option, and docs/tmux.md for the tmux layouts
+# (examples/tmux-per-repo.yaml and examples/tmux-switch.yaml have other ones).
 
 # Main checkouts live here, and each feature gets a folder here too:
 #   ~/projects/repo1                       main checkout
@@ -31,18 +31,27 @@ repos:
 # Start profiles run once per call for the whole feature.
 # Pick profiles per call with +name, e.g. `wag feature-a repo1 repo2 +tmux`.
 start:
-  # A tmux session named after the branch, with two panes side by side, both in the feature folder:
-  # your AI agent on the left half and lazygit on the right half. Calling again attaches to it.
-  # Set "agent" to your agent's command. Needs tmux 3.2 or later.
+  # A tmux session named after the branch, with two panes side by side, both in the feature folder (needs tmux 3.2+):
+  #
+  #   left half:  your AI agent ("agent"), working on every repo of the feature
+  #   right half: the git pane ("git_ui"), a live, read-only view of every repo of the feature:
+  #               for each worktree its branch and whether it is pushed, staged (green) and not-staged (red) files
+  #               with line counts, new files (??), commits on origin's default branch not merged yet, and the
+  #               latest commits. It redraws in place only when something changes, so it stays still while the
+  #               agent works, and it never takes git's index lock, so it cannot get in the agent's way.
+  #               Set git_ui to lazygit or tig for an interactive tool instead.
+  #
+  # Calling wag again, or adding a repo, attaches to the session; a new repo shows up in the git pane by itself.
   tmux:
     - run: |
-        agent="copilot"   # your agent's command, e.g. claude, codex, gemini or aider
+        agent="copilot"                              # your agent: copilot, claude, codex, gemini, aider, ...
+        git_ui="sh $HOME/.config/wag/git-view.sh"   # the git pane: this live view, or lazygit, or tig
         # tmux turns "." and ":" in session names into "_", so do the same to find the session again.
         s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
         if ! tmux has-session -t "=$s" 2>/dev/null; then
           tmux new-session -d -s "$s" -c "$WAG_FEATURE_DIR" \
             -e WAG_FEATURE="$WAG_FEATURE" -e WAG_BRANCH="$WAG_BRANCH" -e WAG_FEATURE_DIR="$WAG_FEATURE_DIR" "$agent"
-          tmux split-window -h -l 50% -t "=$s:" -c "$WAG_FEATURE_DIR" lazygit
+          tmux split-window -h -l 50% -t "=$s:" -c "$WAG_FEATURE_DIR" "$git_ui"
           tmux select-pane -t "=$s:.0"
         fi
         if [ -n "$TMUX" ]; then tmux switch-client -t "=$s"

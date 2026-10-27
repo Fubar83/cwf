@@ -1,14 +1,18 @@
-# wag config: tmux with your agent and one lazygit per repo (Linux, macOS or WSL, tmux 3.2 or later).
-# A session named after the branch: your AI agent on the left half, working on all repos from the feature folder;
-# one lazygit per repo stacked on the right half. Calling again attaches; a newly added repo gets its own lazygit,
-# and removing a repo closes its lazygit. Set "agent" to your agent's command.
-# See docs/tmux.md.
+# wag config: tmux with your agent and one git pane per repo (Linux, macOS or WSL, tmux 3.2 or later).
+# Copy to ~/.config/wag/config.yaml, and examples/git-view.sh to ~/.config/wag/git-view.sh. See docs/tmux.md.
+#
+#   left half:  your AI agent ("agent") in the feature folder, working on every repo of the feature
+#   right half: one git pane ("git_ui") per repo, stacked evenly, each in its own worktree: a live, read-only view
+#               of that repo's branch, staged and not-staged files, and latest commits, redrawn in place only when
+#               something changes. Set git_ui to lazygit or tig for an interactive tool instead.
+#
+# Calling wag again attaches; a newly added repo gets its own git pane, and removing a repo closes its pane.
 
 projects: ~/projects
 
 hooks:
   remove:
-    # Close this worktree's lazygit pane. Never closes the pane you are running wag from,
+    # Close this worktree's git pane. Never closes the pane you are running wag from,
     # and does nothing when tmux is not running.
     - run: |
         command -v tmux >/dev/null 2>&1 || exit 0
@@ -23,7 +27,8 @@ hooks:
 start:
   tmux:
     - run: |
-        agent="copilot"   # your agent's command, e.g. claude, codex, gemini or aider
+        agent="copilot"                              # your agent: copilot, claude, codex, gemini, aider, ...
+        git_ui="sh $HOME/.config/wag/git-view.sh"   # the git pane: this live view, or lazygit, or tig
         # tmux turns "." and ":" in session names into "_", so do the same to find the session again.
         s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
         t="=$s:"
@@ -31,15 +36,15 @@ start:
           tmux new-session -d -s "$s" -c "$WAG_FEATURE_DIR" \
             -e WAG_FEATURE="$WAG_FEATURE" -e WAG_BRANCH="$WAG_BRANCH" -e WAG_FEATURE_DIR="$WAG_FEATURE_DIR" "$agent"
         fi
-        # One lazygit per worktree, added only for worktrees that do not have one yet.
+        # One git pane per worktree, added only for worktrees that do not have one yet.
         have=$(tmux list-panes -t "$t" -F '#{@wag_wt}')
         printf '%s\n' "$WAG_WORKTREES" | while IFS= read -r wt; do
           [ -n "$wt" ] || continue
           printf '%s\n' "$have" | grep -Fqx "$wt" && continue
-          pane=$(tmux split-window -t "$t" -c "$wt" -P -F '#{pane_id}' lazygit)
+          pane=$(tmux split-window -t "$t" -c "$wt" -P -F '#{pane_id}' "$git_ui")
           tmux set-option -p -t "$pane" @wag_wt "$wt"
         done
-        # The agent on the left half, the lazygit panes stacked evenly on the right half.
+        # The agent on the left half, the git panes stacked evenly on the right half.
         tmux set-window-option -t "$t" main-pane-width 50%
         tmux select-layout -t "$t" main-vertical
         tmux select-pane -t "$t.0"
