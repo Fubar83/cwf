@@ -9,7 +9,11 @@
 //   wag <feature> [<repo>...] --rm       remove the feature's worktrees (all of them if no repo is given)
 //
 // Rules:
-//   - Every repo in a feature gets a branch named <feature>, the same locally and on origin (tracking origin/<feature>).
+//   - Every repo in a feature gets a branch named <feature>, and a plain `git push` from the worktree sends it
+//     to origin/<feature>, the first time and after that. The upstream is set by that first push, not before:
+//     an upstream for a branch that is not on origin makes git say "your upstream is gone" on every status.
+//   - A repo's main checkout is put back on origin's default branch when a worktree is created, as long as it is
+//     clean. That also frees the feature's branch when the main checkout is the thing holding it.
 //   - Nothing is guessed. A missing origin, a failed fetch, an invalid name, a branch checked out elsewhere,
 //     a local branch that diverged from origin, or a bad config all stop with an error.
 //   - Creating is all or nothing: if one repo (or one of its create hooks) fails, every worktree and branch
@@ -49,6 +53,15 @@ function gitOk(cwd, ...args) {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Output of a git command that is allowed to fail, "" when it does (an unset config key, say). */
+function gitOut(cwd, ...args) {
+  try {
+    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return "";
   }
 }
 
@@ -190,8 +203,10 @@ function reposIn(cfg, feature) {
     .sort();
 }
 
+const mainDir = (cfg, repo) => cfg.repos[repo]?.path ?? join(cfg.projects, repo);
+
 function mainCheckout(cfg, repo) {
-  const dir = cfg.repos[repo]?.path ?? join(cfg.projects, repo);
+  const dir = mainDir(cfg, repo);
   if (!gitOk(dir, "rev-parse", "--is-inside-work-tree")) fail(`${repo} is not a git repository (looked in ${dir})`);
   if (!gitOk(dir, "remote", "get-url", "origin")) fail(`${repo} has no "origin" remote. wag needs origin to keep branches in sync.`);
   return dir;
@@ -208,12 +223,61 @@ function defaultBranch(main) {
   return git(main, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").replace(/^origin\//, "");
 }
 
-/** The local branch pushes to origin/<same name>, so a plain `git push` never needs a refspec. */
-function trackSameName(main, branch) {
-  git(main, "config", `branch.${branch}.remote`, "origin");
-  git(main, "config", `branch.${branch}.merge`, localRef(branch));
+const PUSH_DEFAULTS = ["", "simple", "current", "upstream"];
+
+/**
+ * Makes a plain `git push` from any of the repo's worktrees go to origin/<the branch's own name>, also the
+ * very first time, when that branch is not on origin yet. Repo-local, so the main checkout and every worktree
+ * share it. Needs git 2.37 for push.autoSetupRemote; without it the first push still needs `git push -u`.
+ */
+function pushSameName(main) {
+  git(main, "config", "push.autoSetupRemote", "true");
+  // push.autoSetupRemote only applies to these; with "matching" or "nothing" a plain push sends nothing at all.
+  if (!PUSH_DEFAULTS.includes(gitOut(main, "config", "--get", "push.default"))) {
+    git(main, "config", "push.default", "current");
+  }
 }
 
+/**
+ * Points the branch's upstream at origin/<same name>, but only once that branch is really on origin.
+ * An upstream naming a branch origin does not have is what makes git say "your upstream is gone" on every
+ * status in the worktree, so until the first push the branch has none: pushSameName sends that push to the
+ * right place anyway, and the push itself sets the upstream.
+ */
+function syncUpstream(main, branch) {
+  if (gitOk(main, "rev-parse", "--verify", "--quiet", remoteRef(branch))) {
+    git(main, "config", `branch.${branch}.remote`, "origin");
+    git(main, "config", `branch.${branch}.merge`, localRef(branch));
+  } else if (gitOut(main, "config", "--get", `branch.${branch}.merge`)) {
+    // The upstream git calls "gone": `git worktree add -b` points a new branch at its start point,
+    // and an older wag pointed it at a branch nobody had pushed.
+    gitOk(main, "config", "--unset", `branch.${branch}.remote`);
+    gitOk(main, "config", "--unset", `branch.${branch}.merge`);
+  }
+}
+
+/**
+ * Puts a repo's main checkout back on origin's default branch, so the main checkout is where you expect it
+ * and the feature's branch is free for its worktree. Only safe moves: a checkout with uncommitted changes or
+ * new files is left alone, and local commits are never touched. Never fails: it is a convenience, and the
+ * checks in prepare still have the last word.
+ */
+function switchMainToDefault(repo, main) {
+  try {
+    const base = defaultBranch(main);
+    const current = git(main, "branch", "--show-current");
+    if (current === base) return;
+    const where = current || "a detached HEAD";
+    if (git(main, "status", "--porcelain").length > 0) {
+      return info(`${repo}: main checkout is on ${where} with uncommitted changes, so it was left there`);
+    }
+    if (gitOk(main, "rev-parse", "--verify", "--quiet", localRef(base))) git(main, "switch", "--quiet", base);
+    else git(main, "switch", "--quiet", "--track", "-c", base, `origin/${base}`);
+    info(`${repo}: main checkout switched from ${where} to ${base}`);
+  } catch (e) {
+    info(`${repo}: main checkout was not switched to the default branch: ${e.message}`);
+  }
+}
 
 // ───────────────────────── hooks ─────────────────────────
 
@@ -300,7 +364,10 @@ function runStart(cfg, names, ctx) {
 
 // ───────────────────────── create and remove ─────────────────────────
 
-/** Checks that a repo can get a worktree for the feature, without changing anything. */
+/**
+ * Checks that a repo can get a worktree for the feature. Its one change to the repo is putting the main
+ * checkout back on the default branch, which also frees the feature's branch when the main checkout sits on it.
+ */
 function prepare(cfg, feature, repo) {
   checkName("repo", repo);
   const main = mainCheckout(cfg, repo);
@@ -308,6 +375,7 @@ function prepare(cfg, feature, repo) {
   if (existsSync(wt)) fail(`${wt} already exists but is not a worktree. Remove it by hand.`);
 
   git(main, "fetch", "--quiet", "--prune", "origin");
+  switchMainToDefault(repo, main);
   if (git(main, "worktree", "list", "--porcelain").split("\n").includes(`branch ${localRef(feature)}`)) {
     fail(`branch ${feature} is already checked out in another worktree of ${repo}`);
   }
@@ -323,7 +391,7 @@ function prepare(cfg, feature, repo) {
     fastForward = localBehind && !remoteBehind;
   }
   const start = localExists ? undefined : remoteExists ? remoteRef(feature) : remoteRef(defaultBranch(main));
-  return { repo, main, wt, localExists, start, fastForward };
+  return { repo, main, wt, localExists, remoteExists, start, fastForward };
 }
 
 /** Creates one prepared worktree and runs its create hooks. Returns an undo function. */
@@ -343,21 +411,40 @@ function createOne(cfg, feature, p) {
       git(p.main, "worktree", "add", "-b", feature, p.wt, p.start);
       createdBranch = true;
     }
-    trackSameName(p.main, feature);
     if (p.fastForward) git(p.wt, "merge", "--ff-only", remoteRef(feature));
+    pushSameName(p.main);
+    syncUpstream(p.main, feature);
     runHooks(cfg, "create", { feature, repo: p.repo, wt: p.wt, main: p.main });
   } catch (e) {
     undo();
     throw e;
   }
-  info(`Created ${p.repo}-${feature} on branch ${feature}, tracking origin/${feature}.`);
+  const onOrigin = `tracking origin/${feature}`;
+  const notYet = `not on origin yet; a plain git push creates origin/${feature}`;
+  info(`Created ${p.repo}-${feature} on branch ${feature}, ${p.remoteExists ? onOrigin : notYet}.`);
   return undo;
+}
+
+/**
+ * Brings a worktree that already exists up to what wag sets today: the push config, and an upstream that git
+ * would call "gone". Local refs only, so no fetch, and a failure here never stops opening the feature.
+ */
+function repair(cfg, feature, repo) {
+  const main = mainDir(cfg, repo);
+  if (!gitOk(main, "remote", "get-url", "origin")) return;
+  try {
+    pushSameName(main);
+    syncUpstream(main, feature);
+  } catch (e) {
+    info(`${repo}: could not check how ${feature} pushes to origin: ${e.message}`);
+  }
 }
 
 /** Creates the missing worktrees, all or nothing. */
 function createAll(cfg, feature, repos) {
   const fdir = featureDir(cfg, feature);
   if (existsSync(join(fdir, ".git"))) fail(`${fdir} is a repository; pick a feature name that is not a repo name`);
+  for (const repo of repos.filter((r) => hasWorktree(cfg, feature, r))) repair(cfg, feature, repo);
   const missing = repos.filter((r) => !hasWorktree(cfg, feature, r));
   if (!missing.length) return;
   // Check every repo before touching any of them.

@@ -9,8 +9,8 @@ and branches, and runs the hooks and start commands you configure.
 ├── api/                          main checkout
 ├── web/                          main checkout
 └── feature-a/
-    ├── api-feature-a/            worktree, branch feature-a, tracking origin/feature-a
-    └── web-feature-a/            worktree, branch feature-a, tracking origin/feature-a
+    ├── api-feature-a/            worktree, branch feature-a, pushes to origin/feature-a
+    └── web-feature-a/            worktree, branch feature-a, pushes to origin/feature-a
 ```
 
 ```bash
@@ -22,8 +22,8 @@ wag feature-a --rm             # remove the feature's worktrees (branches are ke
 
 ## Requirements
 
-- **git 2.17 or later**, able to fetch from your repos' `origin` remotes (SSH keys or a credential helper,
-  whatever you already use). wag runs `git fetch`; pushing is up to you.
+- **git 2.17 or later** (2.37 for a plain first `git push`), able to fetch from your repos' `origin` remotes
+  (SSH keys or a credential helper, whatever you already use). wag runs `git fetch`; pushing is up to you.
 - **Node.js 22 or later**, because wag is a Node script.
 
 That is all. wag's only package dependency, `yaml`, is installed with it. Anything else, such as tmux, lazygit
@@ -61,7 +61,8 @@ Then create your config from one of the [examples](examples), for example
 
 ## In short
 
-- **Same branch name everywhere**, tracking `origin/<feature>`, so a plain `git push` just works.
+- **Same branch name everywhere**, so a plain `git push` just works, the first time and after that.
+- **Main checkouts stay on the default branch**, and are put back on it, when clean, as a worktree is created.
 - **Nothing is guessed.** A missing origin, a failed fetch, a bad name, a branch checked out elsewhere,
   a diverged branch or a config mistake stops wag before it changes anything.
 - **All or nothing.** If one repo fails, everything that call created is rolled back. Removing checks every

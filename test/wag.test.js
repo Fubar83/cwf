@@ -12,6 +12,15 @@ const slash = (p) => p.replaceAll("\\", "/");
 const git = (cwd, ...args) =>
   execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
+/** A config value, "" when the key is not set. */
+const conf = (cwd, key) => {
+  try {
+    return git(cwd, "config", "--get", key);
+  } catch {
+    return "";
+  }
+};
+
 /**
  * For each repo: a bare origin with one commit on main, cloned as <projects>/<repo>.
  * `config` is extra YAML appended after the projects line.
@@ -53,14 +62,19 @@ function setup(config = "", repos = ["app"]) {
 
 // ───────────────────────── worktrees and branches ─────────────────────────
 
-test("create makes a worktree on a same-named branch tracking origin; a second call just prints the path", () => {
+test("create makes a worktree on a same-named branch, with no upstream until it is pushed", () => {
   const s = setup();
   const r = s.wag("feature-a", "app");
   assert.equal(r.code, 0, r.err);
   assert.equal(r.out, s.wt());
   assert.equal(git(r.out, "branch", "--show-current"), "feature-a");
-  assert.equal(git(s.main(), "config", "branch.feature-a.remote"), "origin");
-  assert.equal(git(s.main(), "config", "branch.feature-a.merge"), "refs/heads/feature-a");
+  assert.match(r.err, /not on origin yet/);
+  // The branch is not on origin yet, so it has no upstream: one naming a branch origin does not have is
+  // what makes every git status in the worktree warn. The push config is what sends a plain push there.
+  assert.equal(conf(s.main(), "branch.feature-a.merge"), "");
+  assert.equal(conf(s.main(), "push.autoSetupRemote"), "true");
+  assert.doesNotMatch(git(r.out, "status"), /upstream is gone/);
+  assert.match(git(r.out, "status", "-sb"), /^## feature-a$/m);
 
   const again = s.wag("feature-a", "app");
   assert.equal(again.code, 0);
@@ -74,20 +88,42 @@ test("several repos share the feature folder and branch name; stdout is the feat
   assert.equal(r.out, join(s.projects, "feature-a"));
   for (const repo of ["app", "web"]) {
     assert.equal(git(s.wt(repo), "branch", "--show-current"), "feature-a");
-    assert.equal(git(s.main(repo), "config", "branch.feature-a.merge"), "refs/heads/feature-a");
+    assert.equal(conf(s.main(repo), "branch.feature-a.merge"), "");
   }
   // Adding a repo later keeps the existing one
   assert.equal(s.wag("feature-a", "app").out, s.wt("app"));
 });
 
-test("a plain git push from the worktree creates the same-named branch on origin", () => {
+test("a plain git push creates the branch on origin and sets the upstream, and works again after that", () => {
   const s = setup();
   const path = s.wag("feature-a", "app").out;
-  writeFileSync(join(path, "b.txt"), "x\n");
-  git(path, "add", "-A");
-  git(path, "commit", "-q", "-m", "work");
+  const commit = (name) => {
+    writeFileSync(join(path, name), "x\n");
+    git(path, "add", "-A");
+    git(path, "commit", "-q", "-m", name);
+  };
+  commit("b.txt");
   git(path, "push", "-q");
   assert.match(git(s.root, "ls-remote", s.origin(), "refs/heads/feature-a"), /refs\/heads\/feature-a$/);
+  assert.equal(conf(s.main(), "branch.feature-a.remote"), "origin");
+  assert.equal(conf(s.main(), "branch.feature-a.merge"), "refs/heads/feature-a");
+
+  commit("c.txt"); // and later on, with the upstream in place
+  git(path, "push", "-q");
+  assert.equal(git(path, "rev-parse", "HEAD"), git(path, "rev-parse", "refs/remotes/origin/feature-a"));
+});
+
+test("an upstream that is gone is dropped the next time the feature is opened", () => {
+  const s = setup();
+  const path = s.wag("feature-a", "app").out;
+  // What an older wag left behind: an upstream for a branch it never pushed.
+  git(s.main(), "config", "branch.feature-a.remote", "origin");
+  git(s.main(), "config", "branch.feature-a.merge", "refs/heads/feature-a");
+  assert.match(git(path, "status"), /upstream is gone/);
+
+  assert.equal(s.wag("feature-a", "app").code, 0);
+  assert.equal(conf(s.main(), "branch.feature-a.merge"), "");
+  assert.doesNotMatch(git(path, "status"), /upstream is gone/);
 });
 
 test("an existing origin branch is picked up, not recreated from main", () => {
@@ -103,6 +139,9 @@ test("an existing origin branch is picked up, not recreated from main", () => {
   const r = s.wag("feature-b", "app");
   assert.equal(r.code, 0, r.err);
   assert.ok(existsSync(join(r.out, "c.txt")));
+  // It is on origin, so the upstream is set right away.
+  assert.match(r.err, /tracking origin\/feature-b/);
+  assert.equal(conf(s.main(), "branch.feature-b.merge"), "refs/heads/feature-b");
 });
 
 test("listing shows features and their worktrees", () => {
@@ -172,12 +211,30 @@ test("a local branch that diverged from origin is refused", () => {
   assert.equal(existsSync(s.wt()), false);
 });
 
-test("a branch already checked out in the main checkout is refused", () => {
+test("a main checkout on another branch is put back on the default branch, freeing the feature's branch", () => {
   const s = setup();
   git(s.main(), "checkout", "-q", "-b", "feature-a");
   const r = s.wag("feature-a", "app");
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.err, /main checkout switched from feature-a to main/);
+  assert.equal(git(s.main(), "branch", "--show-current"), "main");
+  assert.equal(git(s.wt(), "branch", "--show-current"), "feature-a");
+
+  git(s.main(), "checkout", "-q", "-b", "unrelated"); // also from a branch the feature has nothing to do with
+  assert.match(s.wag("feature-b", "app").err, /main checkout switched from unrelated to main/);
+  assert.equal(git(s.main(), "branch", "--show-current"), "main");
+});
+
+test("a main checkout with uncommitted changes is left on its branch, so its branch is still refused", () => {
+  const s = setup();
+  git(s.main(), "checkout", "-q", "-b", "feature-a");
+  writeFileSync(join(s.main(), "a.txt"), "work in progress\n");
+  const r = s.wag("feature-a", "app");
   assert.equal(r.code, 1);
+  assert.match(r.err, /uncommitted changes, so it was left there/);
   assert.match(r.err, /already checked out/);
+  assert.equal(git(s.main(), "branch", "--show-current"), "feature-a");
+  assert.equal(existsSync(s.wt()), false);
 });
 
 test("creating several repos is all or nothing: a bad repo stops before anything is created", () => {
