@@ -38,7 +38,7 @@ c6cd5cb (origin/feature-a) Add CSV export endpoint
 cfe1e65 (main) Initial commit
 
 web-feature-a
-## feature-a...origin/feature-a (not pushed yet)
+## feature-a (not pushed yet)
 A  DownloadButton.tsx
    staged: 1 file changed, 1 insertion(+)
 d2cf2cd (HEAD -> feature-a, origin/main, origin/HEAD, main) Initial commit
@@ -46,8 +46,8 @@ d2cf2cd (HEAD -> feature-a, origin/main, origin/HEAD, main) Initial commit
 
 For each repo:
 
-- **Branch line:** the branch and how it relates to origin: `[ahead 1]` means one commit is not pushed yet,
-  `(not pushed yet)` means the branch is not on origin at all.
+- **Branch line:** the branch and how it relates to origin: `...origin/feature-a` with `[ahead 1]` means one
+  commit is not pushed yet, `(not pushed yet)` means the branch is not on origin at all.
 - **Files:** the first column is staged (green in the pane), the second is not staged (red); `A` added,
   `M` modified, `D` deleted, `??` a new file git does not track yet.
 - **Line counts** for staged and not-staged changes.

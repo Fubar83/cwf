@@ -10,16 +10,21 @@ the feature's name. Your main checkouts are left alone, so you can work on sever
 ├── api/                          main checkout of api, left alone
 ├── web/                          main checkout of web
 └── feature-a/                    the feature folder
-    ├── api-feature-a/            worktree of api, branch feature-a, tracking origin/feature-a
-    └── web-feature-a/            worktree of web, branch feature-a, tracking origin/feature-a
+    ├── api-feature-a/            worktree of api, branch feature-a, pushes to origin/feature-a
+    └── web-feature-a/            worktree of web, branch feature-a, pushes to origin/feature-a
 ```
 
 - **Main checkouts** are the normal clones, directly under `projects` (or wherever a repo's `path` says).
+  Creating a worktree puts a main checkout that sits on another branch back on origin's default branch,
+  as long as it is clean; one with uncommitted changes is left alone, with a note.
 - **The feature folder** is `projects/<feature>`. It only holds worktrees.
 - **Each worktree** is `projects/<feature>/<repo>-<feature>`, made with `git worktree`. Nothing is copied:
   git shares the repository between the main checkout and its worktrees.
-- **The branch** is `<feature>` in every repo, and it tracks `origin/<feature>`. A plain `git push`
-  from a worktree creates or updates the same-named branch on origin.
+- **The branch** is `<feature>` in every repo. A plain `git push` from a worktree creates or updates the
+  same-named branch on origin, both the first time and later on; the first push is also what sets the
+  upstream. Until then the branch deliberately has none, because an upstream naming a branch that is not on
+  origin yet is what makes git say "your upstream is gone" on every `git status` (it needs git 2.37, for
+  `push.autoSetupRemote`, which wag sets in the repo).
 
 ## Commands
 
@@ -53,10 +58,10 @@ create hooks for api-feature-a:
   copied .env
   run: git log --oneline -1
 093cdd3 Initial commit
-Created api-feature-a on branch feature-a, tracking origin/feature-a.
+Created api-feature-a on branch feature-a, not on origin yet; a plain git push creates origin/feature-a.
 create hooks for web-feature-a:
   skip copy: ~/projects/web/.env does not exist (optional)
-Created web-feature-a on branch feature-a, tracking origin/feature-a.
+Created web-feature-a on branch feature-a, not on origin yet; a plain git push creates origin/feature-a.
 ~/projects/feature-a
 
 $ wag
@@ -115,6 +120,9 @@ wag fetches and checks the branch **when it creates a worktree**:
 | local and diverged from origin | stops, and changes nothing |
 | nowhere yet | creates it from origin's default branch |
 
+It also puts the repo's main checkout back on origin's default branch, which frees the feature's branch when
+the main checkout is the thing holding it.
+
 If wag stops because the local branch and origin have **diverged**, the branch has no worktree yet, so reconcile it
 with a temporary one (or ask your agent to):
 
@@ -132,13 +140,14 @@ wag feature-a api                          # now works
 - **Nothing is guessed.** wag stops with an error, and changes nothing, when:
   - a repo has no `origin` remote, or `git fetch` fails;
   - a feature or repo name is not a valid branch name (for example `bad name`), or contains a slash;
-  - the feature's branch is checked out somewhere else, such as in the main checkout;
+  - the feature's branch is checked out somewhere else (in a main checkout wag could not switch, because it
+    has uncommitted changes, or in another worktree);
   - the local branch and `origin/<feature>` have diverged (if the local branch is only behind, it is fast-forwarded);
   - the feature name is the name of a repository folder;
   - the config file has a mistake (the error names the exact key).
 - **All or nothing.** When you create several repos, wag checks all of them before touching any.
   If one fails during creation, including one of its create hooks, every worktree and branch made by that call
-  is rolled back.
+  is rolled back. A main checkout that was put back on the default branch stays there: nothing is lost by it.
 - **New branches start from origin.** A new branch starts from `origin/<feature>` if it exists, otherwise from
   origin's default branch, never from whatever happens to be checked out locally.
 - **Local files stay local.** Files copied in by hooks are added to the repo's local exclude list

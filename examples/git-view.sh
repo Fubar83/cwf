@@ -25,7 +25,14 @@ commits=$2
 # One repo: branch line, files, line counts, unmerged commits on the default branch, latest commits.
 show() {
   r=$1 n=$2
-  git -C "$r" -c color.ui=always status --short --branch 2>/dev/null | head -n 1 | sed 's/\[gone\]/(not pushed yet)/'
+  # A branch that is not on origin yet has no upstream, so git prints the branch alone, with no "...origin/x".
+  branch=$(git -C "$r" -c color.ui=always status --short --branch 2>/dev/null | head -n 1)
+  case $branch in
+    *'[gone]'*) branch=$(printf '%s' "$branch" | sed 's/\[gone\]/(not pushed yet)/') ;;
+    *...* | *'(no branch)'*) ;;
+    *) branch="$branch (not pushed yet)" ;;
+  esac
+  printf '%s\n' "$branch"
   git -C "$r" -c color.ui=always status --short 2>/dev/null
   staged=$(git -C "$r" diff --cached --shortstat 2>/dev/null)
   unstaged=$(git -C "$r" diff --shortstat 2>/dev/null)
