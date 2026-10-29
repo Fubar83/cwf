@@ -14,43 +14,43 @@ hooks:
   remove:
     # Close this worktree's git pane. Never closes the pane you are running wag from,
     # and does nothing when tmux is not running.
-    - run: |
-        command -v tmux >/dev/null 2>&1 || exit 0
-        s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
-        tmux has-session -t "=$s" 2>/dev/null || exit 0
-        tmux list-panes -s -t "=$s" -F '#{pane_id} #{@wag_wt}' | while read -r id wt; do
-          [ "$wt" = "$WAG_WORKTREE" ] && [ "$id" != "$TMUX_PANE" ] && tmux kill-pane -t "$id"
-        done
-        tmux select-layout -t "=$s:" main-vertical 2>/dev/null
-        exit 0
+    - |
+      command -v tmux >/dev/null 2>&1 || exit 0
+      s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
+      tmux has-session -t "=$s" 2>/dev/null || exit 0
+      tmux list-panes -s -t "=$s" -F '#{pane_id} #{@wag_wt}' | while read -r id wt; do
+        [ "$wt" = "$WAG_WORKTREE" ] && [ "$id" != "$TMUX_PANE" ] && tmux kill-pane -t "$id"
+      done
+      tmux select-layout -t "=$s:" main-vertical 2>/dev/null
+      exit 0
 
 start:
   tmux:
-    - run: |
-        agent="copilot"                              # your agent: copilot, claude, codex, gemini, aider, ...
-        git_ui="sh $HOME/.config/wag/git-view.sh"   # the git pane: this live view, or lazygit, or tig
-        # tmux turns "." and ":" in session names into "_", so do the same to find the session again.
-        s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
-        t="=$s:"
-        if ! tmux has-session -t "=$s" 2>/dev/null; then
-          tmux new-session -d -s "$s" -c "$WAG_FEATURE_DIR" \
-            -e WAG_FEATURE="$WAG_FEATURE" -e WAG_BRANCH="$WAG_BRANCH" -e WAG_FEATURE_DIR="$WAG_FEATURE_DIR" "$agent"
-        fi
-        # One git pane per worktree, added only for worktrees that do not have one yet.
-        have=$(tmux list-panes -t "$t" -F '#{@wag_wt}')
-        printf '%s\n' "$WAG_WORKTREES" | while IFS= read -r wt; do
-          [ -n "$wt" ] || continue
-          printf '%s\n' "$have" | grep -Fqx "$wt" && continue
-          pane=$(tmux split-window -t "$t" -c "$wt" -P -F '#{pane_id}' "$git_ui")
-          tmux set-option -p -t "$pane" @wag_wt "$wt"
-        done
-        # The agent on the left half, the git panes stacked evenly on the right half.
-        tmux set-window-option -t "$t" main-pane-width 50%
-        tmux select-layout -t "$t" main-vertical
-        tmux select-pane -t "$t.0"
-        if [ -n "$TMUX" ]; then tmux switch-client -t "=$s"
-        elif [ -t 0 ]; then tmux attach -t "=$s"
-        else echo "tmux session $s is ready: tmux attach -t $s" >&2
-        fi
+    - |
+      agent="copilot"                              # your agent: copilot, claude, codex, gemini, aider, ...
+      git_ui="sh $HOME/.config/wag/git-view.sh"   # the git pane: this live view, or lazygit, or tig
+      # tmux turns "." and ":" in session names into "_", so do the same to find the session again.
+      s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
+      t="=$s:"
+      if ! tmux has-session -t "=$s" 2>/dev/null; then
+        tmux new-session -d -s "$s" -c "$WAG_FEATURE_DIR" \
+          -e WAG_FEATURE="$WAG_FEATURE" -e WAG_BRANCH="$WAG_BRANCH" -e WAG_FEATURE_DIR="$WAG_FEATURE_DIR" "$agent"
+      fi
+      # One git pane per worktree, added only for worktrees that do not have one yet.
+      have=$(tmux list-panes -t "$t" -F '#{@wag_wt}')
+      printf '%s\n' "$WAG_WORKTREES" | while IFS= read -r wt; do
+        [ -n "$wt" ] || continue
+        printf '%s\n' "$have" | grep -Fqx "$wt" && continue
+        pane=$(tmux split-window -t "$t" -c "$wt" -P -F '#{pane_id}' "$git_ui")
+        tmux set-option -p -t "$pane" @wag_wt "$wt"
+      done
+      # The agent on the left half, the git panes stacked evenly on the right half.
+      tmux set-window-option -t "$t" main-pane-width 50%
+      tmux select-layout -t "$t" main-vertical
+      tmux select-pane -t "$t.0"
+      if [ -n "$TMUX" ]; then tmux switch-client -t "=$s"
+      elif [ -t 0 ]; then tmux attach -t "=$s"
+      else echo "tmux session $s is ready: tmux attach -t $s" >&2
+      fi
 
 autostart: [tmux]

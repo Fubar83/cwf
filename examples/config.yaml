@@ -5,29 +5,28 @@
 # (examples/tmux-per-repo.yaml and examples/tmux-switch.yaml have other ones).
 
 # Main checkouts live here, and each feature gets a folder here too:
-#   ~/projects/repo1                       main checkout
-#   ~/projects/feature-a/repo1-feature-a   worktree on branch feature-a
+#   ~/projects/repo1                 main checkout
+#   ~/projects/feature-a/repo1       worktree on branch feature-a
 projects: ~/projects
 # features: _features    # uncomment to collect feature folders in ~/projects/_features instead
 
-# Hooks for every repo. Global steps run first, then the repo's own.
+# Hooks for every repo. Global steps run first, then the repo's own. Each step is a bash command line, run
+# in the worktree; a step whose first word is a file next to this config (setup.sh, say) is run as a script.
 # create: after a worktree is made. If a step fails, the whole create is rolled back.
 # remove: before a worktree is removed. If a step fails, nothing is removed (unless --force).
 hooks:
   create:
-    - copy: .env            # the main checkout's local .env, if it has one
-      optional: true
+    - cp "$WAG_MAIN/.env" .env 2>/dev/null || true   # the main checkout's local .env, if it has one
 
 repos:
   repo1:
     create:
-      - copy: ~/secrets/repo1/appsettings.Local.json
-        to: src/Api/appsettings.Local.json
-      - run: npm ci
+      - cp ~/secrets/repo1/appsettings.Local.json src/Api/appsettings.Local.json
+      - npm ci
   repo2:
     path: ~/work/repo2      # a main checkout outside the projects folder
     remove:
-      - run: docker compose down
+      - docker compose down
 
 # Start profiles run once per call for the whole feature.
 # Pick profiles per call with +name, e.g. `wag feature-a repo1 repo2 +tmux`.
@@ -44,21 +43,21 @@ start:
   #
   # Calling wag again, or adding a repo, attaches to the session; a new repo shows up in the git pane by itself.
   tmux:
-    - run: |
-        agent="copilot"                              # your agent: copilot, claude, codex, gemini, aider, ...
-        git_ui="sh $HOME/.config/wag/git-view.sh"   # the git pane: this live view, or lazygit, or tig
-        # tmux turns "." and ":" in session names into "_", so do the same to find the session again.
-        s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
-        if ! tmux has-session -t "=$s" 2>/dev/null; then
-          tmux new-session -d -s "$s" -c "$WAG_FEATURE_DIR" \
-            -e WAG_FEATURE="$WAG_FEATURE" -e WAG_BRANCH="$WAG_BRANCH" -e WAG_FEATURE_DIR="$WAG_FEATURE_DIR" "$agent"
-          tmux split-window -h -l 50% -t "=$s:" -c "$WAG_FEATURE_DIR" "$git_ui"
-          tmux select-pane -t "=$s:.0"
-        fi
-        if [ -n "$TMUX" ]; then tmux switch-client -t "=$s"
-        elif [ -t 0 ]; then tmux attach -t "=$s"
-        else echo "tmux session $s is ready: tmux attach -t $s" >&2
-        fi
+    - |
+      agent="copilot"                              # your agent: copilot, claude, codex, gemini, aider, ...
+      git_ui="sh $HOME/.config/wag/git-view.sh"   # the git pane: this live view, or lazygit, or tig
+      # tmux turns "." and ":" in session names into "_", so do the same to find the session again.
+      s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
+      if ! tmux has-session -t "=$s" 2>/dev/null; then
+        tmux new-session -d -s "$s" -c "$WAG_FEATURE_DIR" \
+          -e WAG_FEATURE="$WAG_FEATURE" -e WAG_BRANCH="$WAG_BRANCH" -e WAG_FEATURE_DIR="$WAG_FEATURE_DIR" "$agent"
+        tmux split-window -h -l 50% -t "=$s:" -c "$WAG_FEATURE_DIR" "$git_ui"
+        tmux select-pane -t "=$s:.0"
+      fi
+      if [ -n "$TMUX" ]; then tmux switch-client -t "=$s"
+      elif [ -t 0 ]; then tmux attach -t "=$s"
+      else echo "tmux session $s is ready: tmux attach -t $s" >&2
+      fi
 
 # Start profiles to run when no +name is given. `--no-start` skips them for one call.
 autostart: [tmux]

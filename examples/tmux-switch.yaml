@@ -16,69 +16,69 @@ hooks:
   remove:
     # Close this repo's git pane and terminal. If they are on the right of the main window, show the next repo
     # there first. Never closes the pane you are running wag from, and does nothing when tmux is not running.
-    - run: |
-        command -v tmux >/dev/null 2>&1 || exit 0
-        s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
-        tmux has-session -t "=$s" 2>/dev/null || exit 0
-        main=$(tmux show-options -t "=$s:" -v @wag_main 2>/dev/null)
-        panes=$(tmux list-panes -s -t "=$s" -F '#{window_id} #{pane_id} #{@wag_role} #{@wag_wt}')
-        shown=no; mine=no
-        while read -r win id role wt; do
-          [ "$wt" = "$WAG_WORKTREE" ] || continue
-          [ "$win" = "$main" ] && shown=yes
-          [ "$id" = "$TMUX_PANE" ] && mine=yes
-        done <<EOF
-        $panes
-        EOF
-        if [ "$shown" = yes ] && [ "$mine" = no ]; then
-          sh "$HOME/.config/wag/tmux-next-repo.sh" "$s"
-        fi
-        while read -r win id role wt; do
-          [ "$wt" = "$WAG_WORKTREE" ] && [ "$id" != "$TMUX_PANE" ] && tmux kill-pane -t "$id"
-        done <<EOF
-        $panes
-        EOF
-        exit 0
+    - |
+      command -v tmux >/dev/null 2>&1 || exit 0
+      s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
+      tmux has-session -t "=$s" 2>/dev/null || exit 0
+      main=$(tmux show-options -t "=$s:" -v @wag_main 2>/dev/null)
+      panes=$(tmux list-panes -s -t "=$s" -F '#{window_id} #{pane_id} #{@wag_role} #{@wag_wt}')
+      shown=no; mine=no
+      while read -r win id role wt; do
+        [ "$wt" = "$WAG_WORKTREE" ] || continue
+        [ "$win" = "$main" ] && shown=yes
+        [ "$id" = "$TMUX_PANE" ] && mine=yes
+      done <<EOF
+      $panes
+      EOF
+      if [ "$shown" = yes ] && [ "$mine" = no ]; then
+        sh "$HOME/.config/wag/tmux-next-repo.sh" "$s"
+      fi
+      while read -r win id role wt; do
+        [ "$wt" = "$WAG_WORKTREE" ] && [ "$id" != "$TMUX_PANE" ] && tmux kill-pane -t "$id"
+      done <<EOF
+      $panes
+      EOF
+      exit 0
 
 start:
   tmux:
-    - run: |
-        agent="copilot"                              # your agent: copilot, claude, codex, gemini, aider, ...
-        git_ui="sh $HOME/.config/wag/git-view.sh"   # the git pane: this live view, or lazygit, or tig
-        next="$HOME/.config/wag/tmux-next-repo.sh"
-        # tmux turns "." and ":" in session names into "_", so do the same to find the session again.
-        s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
-        if ! tmux has-session -t "=$s" 2>/dev/null; then
-          tmux new-session -d -s "$s" -c "$WAG_FEATURE_DIR" \
-            -e WAG_FEATURE="$WAG_FEATURE" -e WAG_BRANCH="$WAG_BRANCH" -e WAG_FEATURE_DIR="$WAG_FEATURE_DIR" "$agent"
-          tmux set-option -t "=$s:" @wag_main "$(tmux display -p -t "=$s:" '#{window_id}')"
+    - |
+      agent="copilot"                              # your agent: copilot, claude, codex, gemini, aider, ...
+      git_ui="sh $HOME/.config/wag/git-view.sh"   # the git pane: this live view, or lazygit, or tig
+      next="$HOME/.config/wag/tmux-next-repo.sh"
+      # tmux turns "." and ":" in session names into "_", so do the same to find the session again.
+      s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
+      if ! tmux has-session -t "=$s" 2>/dev/null; then
+        tmux new-session -d -s "$s" -c "$WAG_FEATURE_DIR" \
+          -e WAG_FEATURE="$WAG_FEATURE" -e WAG_BRANCH="$WAG_BRANCH" -e WAG_FEATURE_DIR="$WAG_FEATURE_DIR" "$agent"
+        tmux set-option -t "=$s:" @wag_main "$(tmux display -p -t "=$s:" '#{window_id}')"
+      fi
+      main=$(tmux show-options -t "=$s:" -v @wag_main)
+      tmux bind-key g run-shell "sh '$next' '#{session_name}'"
+      # A git pane and a terminal per repo, added only for repos that do not have them yet.
+      have=$(tmux list-panes -s -t "=$s" -F '#{@wag_wt}')
+      printf '%s\n' "$WAG_WORKTREES" | while IFS= read -r wt; do
+        [ -n "$wt" ] || continue
+        printf '%s\n' "$have" | grep -Fqx "$wt" && continue
+        b=$(basename "$wt"); repo=${b%-"$WAG_BRANCH"}
+        if tmux list-panes -t "$main" -F '#{@wag_role}' | grep -qx git; then
+          git=$(tmux new-window -d -t "=$s:" -n "$repo" -c "$wt" -P -F '#{pane_id}' "$git_ui")
+        else
+          git=$(tmux split-window -d -h -l 50% -t "$main" -c "$wt" -P -F '#{pane_id}' "$git_ui")
+          tmux rename-window -t "$main" "$repo"
         fi
-        main=$(tmux show-options -t "=$s:" -v @wag_main)
-        tmux bind-key g run-shell "sh '$next' '#{session_name}'"
-        # A git pane and a terminal per repo, added only for repos that do not have them yet.
-        have=$(tmux list-panes -s -t "=$s" -F '#{@wag_wt}')
-        printf '%s\n' "$WAG_WORKTREES" | while IFS= read -r wt; do
-          [ -n "$wt" ] || continue
-          printf '%s\n' "$have" | grep -Fqx "$wt" && continue
-          b=$(basename "$wt"); repo=${b%-"$WAG_BRANCH"}
-          if tmux list-panes -t "$main" -F '#{@wag_role}' | grep -qx git; then
-            git=$(tmux new-window -d -t "=$s:" -n "$repo" -c "$wt" -P -F '#{pane_id}' "$git_ui")
-          else
-            git=$(tmux split-window -d -h -l 50% -t "$main" -c "$wt" -P -F '#{pane_id}' "$git_ui")
-            tmux rename-window -t "$main" "$repo"
-          fi
-          term=$(tmux split-window -d -v -l 25% -t "$git" -c "$wt" -P -F '#{pane_id}')
-          for p in "$git" "$term"; do
-            tmux set-option -p -t "$p" @wag_wt "$wt"
-            tmux set-option -p -t "$p" @wag_repo "$repo"
-          done
-          tmux set-option -p -t "$git" @wag_role git
-          tmux set-option -p -t "$term" @wag_role term
+        term=$(tmux split-window -d -v -l 25% -t "$git" -c "$wt" -P -F '#{pane_id}')
+        for p in "$git" "$term"; do
+          tmux set-option -p -t "$p" @wag_wt "$wt"
+          tmux set-option -p -t "$p" @wag_repo "$repo"
         done
-        tmux select-window -t "$main"
-        if [ -n "$TMUX" ]; then tmux switch-client -t "=$s"
-        elif [ -t 0 ]; then tmux attach -t "=$s"
-        else echo "tmux session $s is ready: tmux attach -t $s" >&2
-        fi
+        tmux set-option -p -t "$git" @wag_role git
+        tmux set-option -p -t "$term" @wag_role term
+      done
+      tmux select-window -t "$main"
+      if [ -n "$TMUX" ]; then tmux switch-client -t "=$s"
+      elif [ -t 0 ]; then tmux attach -t "=$s"
+      else echo "tmux session $s is ready: tmux attach -t $s" >&2
+      fi
 
 autostart: [tmux]

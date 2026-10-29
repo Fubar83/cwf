@@ -19,18 +19,19 @@
 //     an upstream for a branch that is not on origin makes git say "your upstream is gone" on every status.
 //   - A repo's main checkout is put back on origin's default branch when a worktree is created, as long as it is
 //     clean. That also frees the feature's branch when the main checkout is the thing holding it.
+//   - A hook or start step is one bash command line, written as a plain string. A step whose first word is a
+//     file next to the config file is run as that script with bash, arguments and all.
 //   - Nothing is guessed. A missing origin, a failed fetch, an invalid name, a branch checked out elsewhere,
 //     a local branch that diverged from origin, or a bad config all stop with an error.
 //   - Creating is all or nothing: if one repo (or one of its create hooks) fails, every worktree and branch
 //     made by that call is rolled back.
-//   - Files copied by hooks are kept out of commits (added to the repo's local exclude list).
 //
 // stdout is only the path: the worktree for one repo, the feature folder for several.
 // So `cd "$(wag feature-a repo1)"` works. Everything else goes to stderr.
 // Config: $WAG_CONFIG, or $XDG_CONFIG_HOME/wag/config.yaml, or ~/.config/wag/config.yaml.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -104,28 +105,20 @@ function onlyKeys(obj, allowed, at) {
   }
 }
 
-/** A step is { copy: from, to?, optional?, overwrite? } or { run: command }. Start profiles allow only run. */
-function parseSteps(list, at, { copy = true } = {}) {
+/**
+ * A step is a command, written as a plain string: a bash command line, or the name of a script file next
+ * to the config file. There is nothing to name it, so there is no "run:" and no copy step either: copying
+ * a file in is `cp`, like it would be in any script.
+ */
+function parseSteps(list, at) {
   if (list == null) return [];
-  if (!Array.isArray(list)) fail(`config ${at}: must be a list`);
+  if (!Array.isArray(list)) fail(`config ${at}: must be a list of commands`);
   return list.map((s, i) => {
-    const here = `${at}[${i}]`;
-    if (!isObject(s)) fail(`config ${here}: must be { ${copy ? "copy: … } or { " : ""}run: … }`);
-    if ("run" in s) {
-      onlyKeys(s, ["run"], here);
-      if (typeof s.run !== "string" || !s.run.trim()) fail(`config ${here}.run: must be a command`);
-      return { run: s.run };
+    if (typeof s !== "string" || !s.trim()) {
+      const was = isObject(s) ? ` (a mapping: "run:" and "copy:" are gone, write the command on its own)` : "";
+      fail(`config ${at}[${i}]: must be a command, as a string${was}`);
     }
-    if ("copy" in s && copy) {
-      onlyKeys(s, ["copy", "to", "optional", "overwrite"], here);
-      if (typeof s.copy !== "string" || !s.copy.trim()) fail(`config ${here}.copy: must be a path`);
-      if (s.to !== undefined && (typeof s.to !== "string" || !s.to.trim())) fail(`config ${here}.to: must be a path`);
-      for (const k of ["optional", "overwrite"]) {
-        if (s[k] !== undefined && typeof s[k] !== "boolean") fail(`config ${here}.${k}: must be true or false`);
-      }
-      return { copy: s.copy, to: s.to, optional: s.optional === true, overwrite: s.overwrite === true };
-    }
-    fail(`config ${here}: needs ${copy ? '"copy" or ' : ""}"run"`);
+    return s;
   });
 }
 
@@ -156,7 +149,7 @@ function loadConfig(file = configFile()) {
     if (!isObject(raw.start)) fail("config start: must be a mapping of profile name to steps");
     for (const [name, steps] of Object.entries(raw.start)) {
       if (!PROFILE_NAME.test(name)) fail(`config start: invalid profile name "${name}"`);
-      start[name] = parseSteps(steps, `start.${name}`, { copy: false });
+      start[name] = parseSteps(steps, `start.${name}`);
     }
   }
   const autostart = raw.autostart ?? [];
@@ -187,6 +180,7 @@ function loadConfig(file = configFile()) {
   const features = featuresDir(projects, raw.features);
   return {
     file,
+    dir: dirname(file),
     projects,
     features,
     hooks: parseHooks(raw.hooks, "hooks"),
@@ -340,54 +334,37 @@ function switchMainToDefault(repo, main) {
   }
 }
 
-// ───────────────────────── hooks ─────────────────────────
+// ───────────────────────── steps ─────────────────────────
 
 const toPosix = (p) => p.split(sep).join("/");
+const shQuote = (s) => `'${s.replaceAll("'", `'\\''`)}'`;
 
-/** Keeps a copied path out of commits: adds it to the repo's local exclude list unless git already ignores it. */
-function excludeFromGit(wt, rel) {
-  if (gitOk(wt, "check-ignore", "-q", "--", rel)) return;
-  const common = resolve(wt, git(wt, "rev-parse", "--git-common-dir"));
-  const file = join(common, "info", "exclude");
-  const line = `/${toPosix(rel)}`;
-  const existing = existsSync(file) ? readFileSync(file, "utf8").split(/\r?\n/) : [];
-  if (existing.includes(line)) return;
-  mkdirSync(dirname(file), { recursive: true });
-  const prefix = existing.length && existing[existing.length - 1] !== "" ? "\n" : "";
-  appendFileSync(file, `${prefix}${line}\n`);
+/** The script a step names, when its first word is a file next to the config file, else "". */
+function scriptOf(cfg, command) {
+  if (command.includes("\n")) return ""; // a block is written inline, not a file name
+  const first = command.trim().split(/\s+/)[0];
+  if (first.includes("/") || first.includes("\\")) return "";
+  const file = join(cfg.dir, first);
+  return existsSync(file) && statSync(file).isFile() ? file : "";
 }
 
-function copyStep(step, ctx) {
-  const fromRelative = !isAbsolute(step.copy) && !/^~(?=$|[\\/])/.test(step.copy);
-  // Relative sources come from the repo's main checkout, e.g. its untracked .env.
-  const from = fromRelative ? resolve(ctx.main, step.copy) : resolve(expandHome(step.copy));
-  if (!existsSync(from)) {
-    if (step.optional) return info(`  skip copy: ${from} does not exist (optional)`);
-    fail(`copy: ${from} does not exist`);
+/**
+ * Runs one step with bash: in the worktree for a hook, in the printed path for a start profile. A step whose
+ * first word is a file next to the config file is run as a script with bash, so it needs no execute bit and
+ * no shebang, and keeps the arguments written after it. Everything else is a bash command line.
+ * Its stdout goes to our stderr, so stdout stays only the path.
+ */
+function runCommand(cfg, command, cwd, env) {
+  const line = command.trim().split("\n")[0] + (command.includes("\n") ? " …" : "");
+  const script = scriptOf(cfg, command);
+  info(`  $ ${line}${script ? `   (script next to ${basename(cfg.file)})` : ""}`);
+  const first = command.trim().split(/\s+/)[0];
+  const run = script ? `bash ${shQuote(toPosix(script))}${command.trim().slice(first.length)}` : command;
+  const r = spawnSync("bash", ["-c", run], { cwd, stdio: ["inherit", 2, 2], env: { ...process.env, ...env } });
+  if (r.error) {
+    fail(`"${line}" could not start: ${r.error.message}. wag runs steps with bash, so bash has to be on PATH (Git Bash on Windows).`);
   }
-  const rel = step.to ?? (fromRelative ? step.copy : basename(from));
-  const to = resolve(ctx.wt, rel);
-  if (!inside(ctx.wt, to) || to === ctx.wt) fail(`copy: "${rel}" points outside the worktree`);
-  const relInWt = relative(ctx.wt, to);
-  const tracked = gitOk(ctx.wt, "ls-files", "--error-unmatch", "--", relInWt);
-  if (existsSync(to) && !step.overwrite) {
-    fail(`copy: ${relInWt} already exists in the worktree. Set "overwrite: true" to replace it.`);
-  }
-  mkdirSync(dirname(to), { recursive: true });
-  cpSync(from, to, { recursive: true, force: true });
-  if (tracked) info(`  copied ${relInWt} over a tracked file; it will show as modified`);
-  else {
-    excludeFromGit(ctx.wt, relInWt);
-    info(`  copied ${relInWt}`);
-  }
-}
-
-/** Runs a shell command. Its stdout goes to our stderr, so stdout stays only the path. */
-function runCommand(command, cwd, env) {
-  info(`  run: ${command.split("\n")[0]}${command.includes("\n") ? " …" : ""}`);
-  const r = spawnSync(command, { cwd, shell: true, stdio: ["inherit", 2, 2], env: { ...process.env, ...env } });
-  if (r.error) fail(`run "${command}" could not start: ${r.error.message}`);
-  if (r.status !== 0) fail(`run "${command.split("\n")[0]}" failed with exit code ${r.status}`);
+  if (r.status !== 0) fail(`"${line}" failed with exit code ${r.status}`);
 }
 
 /** Create and remove hooks for one worktree: global steps first, then the repo's own. */
@@ -396,10 +373,7 @@ function runHooks(cfg, event, ctx) {
   if (!steps.length) return;
   info(`${event} hooks for ${folderOf(ctx.feature)}/${ctx.repo}:`);
   const env = { WAG_FEATURE: ctx.feature, WAG_BRANCH: ctx.feature, WAG_REPO: ctx.repo, WAG_WORKTREE: ctx.wt, WAG_MAIN: ctx.main };
-  for (const step of steps) {
-    if (step.run !== undefined) runCommand(step.run, ctx.wt, env);
-    else copyStep(step, ctx);
-  }
+  for (const step of steps) runCommand(cfg, step, ctx.wt, env);
 }
 
 /**
@@ -419,7 +393,7 @@ function runStart(cfg, names, ctx) {
     const steps = cfg.start[name];
     if (!steps) fail(`no start profile "${name}" (defined: ${Object.keys(cfg.start).join(", ") || "none"})`);
     info(`start ${name} for ${ctx.feature}:`);
-    for (const step of steps) runCommand(step.run, ctx.cwd, env);
+    for (const step of steps) runCommand(cfg, step, ctx.cwd, env);
   }
 }
 
