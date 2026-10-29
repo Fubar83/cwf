@@ -9,6 +9,8 @@
 //   wag <feature> [<repo>...] --rm       remove the feature's worktrees (all of them if no repo is given)
 //
 // Rules:
+//   - Main checkouts live in "projects". Feature folders go there too, or in a folder inside it that the
+//     "features" setting names, like "_features". It is always inside projects, never anywhere else.
 //   - A feature may be a path, like feature/tjosan-1. The branch is that whole name and the feature folder
 //     nests to match it; the worktrees inside are named after the last segment (api-tjosan-1). A trailing
 //     slash on any argument is dropped, so tab-completed folder names work: wag feature/testA repo1/ repo2/
@@ -83,6 +85,19 @@ function configFile() {
   return join(base, "wag", "config.yaml");
 }
 
+/**
+ * Where feature folders go: the projects folder, or a folder inside it that "features" names, like
+ * "_features". Nothing else, so one setting cannot send worktrees off to an unrelated part of the disk.
+ */
+function featuresDir(projects, value) {
+  if (!value) return projects;
+  const dir = resolve(projects, value);
+  if (isAbsolute(value) || value.startsWith("~") || !inside(projects, dir)) {
+    fail(`config features: must be a folder inside projects, like "_features" (got "${value}")`);
+  }
+  return dir;
+}
+
 function onlyKeys(obj, allowed, at) {
   for (const k of Object.keys(obj)) {
     if (!allowed.includes(k)) fail(`config ${at}: unknown key "${k}" (allowed: ${allowed.join(", ")})`);
@@ -132,8 +147,9 @@ function loadConfig(file = configFile()) {
     }
     if (!isObject(raw)) fail(`config ${file}: must be a mapping`);
   }
-  onlyKeys(raw, ["projects", "hooks", "start", "autostart", "repos"], "(root)");
+  onlyKeys(raw, ["projects", "features", "hooks", "start", "autostart", "repos"], "(root)");
   if (raw.projects !== undefined && typeof raw.projects !== "string") fail("config projects: must be a path");
+  if (raw.features !== undefined && typeof raw.features !== "string") fail("config features: must be a path");
 
   const start = {};
   if (raw.start != null) {
@@ -167,9 +183,12 @@ function loadConfig(file = configFile()) {
       };
     }
   }
+  const projects = resolve(expandHome(raw.projects ?? "~/projects"));
+  const features = featuresDir(projects, raw.features);
   return {
     file,
-    projects: resolve(expandHome(raw.projects ?? "~/projects")),
+    projects,
+    features,
     hooks: parseHooks(raw.hooks, "hooks"),
     start,
     autostart,
@@ -203,7 +222,7 @@ function checkName(kind, name) {
 /** The last segment of a feature name: what the worktree folders are named after. */
 const leafOf = (feature) => feature.slice(feature.lastIndexOf("/") + 1);
 
-const featureDir = (cfg, feature) => join(cfg.projects, feature);
+const featureDir = (cfg, feature) => join(cfg.features, feature);
 const worktreeOf = (cfg, feature, repo) => join(featureDir(cfg, feature), `${repo}-${leafOf(feature)}`);
 const hasWorktree = (cfg, feature, repo) => existsSync(join(worktreeOf(cfg, feature, repo), ".git"));
 
@@ -223,8 +242,8 @@ function reposIn(cfg, feature) {
  * that is not a repository is looked into, so a nested feature like feature/tjosan-1 is found. Main checkouts
  * and worktrees are repositories, so the walk stops at them instead of reading what they contain.
  */
-function featuresIn(cfg, dir = cfg.projects, depth = 4) {
-  const name = relative(cfg.projects, dir).split(sep).join("/");
+function featuresIn(cfg, dir = cfg.features, depth = 4) {
+  const name = relative(cfg.features, dir).split(sep).join("/");
   if (name) {
     if (reposIn(cfg, name).length) return [name];
     if (existsSync(join(dir, ".git"))) return [];
@@ -238,7 +257,7 @@ function featuresIn(cfg, dir = cfg.projects, depth = 4) {
 /** Drops the feature folder once it is empty, and any parent of it that this leaves empty. */
 function pruneFeatureDir(cfg, feature) {
   let dir = featureDir(cfg, feature);
-  while (inside(cfg.projects, dir) && dir !== cfg.projects && isDir(dir) && !readdirSync(dir).length) {
+  while (inside(cfg.features, dir) && dir !== cfg.features && isDir(dir) && !readdirSync(dir).length) {
     rmSync(dir, { recursive: true });
     dir = dirname(dir);
   }
@@ -485,8 +504,13 @@ function repair(cfg, feature, repo) {
 function createAll(cfg, feature, repos) {
   const fdir = featureDir(cfg, feature);
   // Every segment of a nested feature becomes a folder, so none of them may be a repository.
-  for (let d = fdir; inside(cfg.projects, d) && d !== cfg.projects; d = dirname(d)) {
-    if (existsSync(join(d, ".git"))) fail(`${d} is a repository; pick a feature name that is not a repo name`);
+  for (let d = fdir; inside(cfg.features, d); d = dirname(d)) {
+    if (existsSync(join(d, ".git"))) {
+      fail(d === cfg.features
+        ? `${d} is a repository, so feature folders cannot go in it. Point "features" somewhere else in ${cfg.file}.`
+        : `${d} is a repository; pick a feature name that is not a repo name`);
+    }
+    if (d === cfg.features) break;
   }
   for (const repo of repos.filter((r) => hasWorktree(cfg, feature, r))) repair(cfg, feature, repo);
   const missing = repos.filter((r) => !hasWorktree(cfg, feature, r));
@@ -536,7 +560,8 @@ function removeAll(cfg, feature, repos, force) {
 /** Worktrees of one feature, or of all features when feature is undefined. */
 function list(cfg, feature) {
   if (!isDir(cfg.projects)) fail(`${cfg.projects} does not exist (set "projects" in ${cfg.file})`);
-  const features = feature ? [feature] : featuresIn(cfg);
+  // The features folder is made when the first worktree is: until then there is simply nothing to list.
+  const features = feature ? [feature] : isDir(cfg.features) ? featuresIn(cfg) : [];
   let shown = false;
   for (const f of features.sort()) {
     const repos = reposIn(cfg, f);

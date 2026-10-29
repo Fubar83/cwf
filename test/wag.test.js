@@ -213,6 +213,47 @@ test("removing a nested feature takes the empty folders above it with it", () =>
   assert.equal(existsSync(join(s.projects, "keep", "one")), false);
 });
 
+test("features: a folder under projects keeps the main checkouts and the features apart", () => {
+  const s = setup("features: _features\n", ["app", "web"]);
+  assert.match(s.wag().out, /No features yet/); // the folder is made with the first worktree
+  const r = s.wag("feature/testA", "app", "web");
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.out, join(s.projects, "_features", "feature", "testA"));
+  assert.ok(existsSync(join(s.projects, "_features", "feature", "testA", "app-testA", ".git")));
+  // The main checkouts are untouched and are not mistaken for features.
+  assert.ok(existsSync(join(s.main("app"), ".git")));
+  assert.match(s.wag().out, /^feature\/testA$/m);
+  assert.doesNotMatch(s.wag().out, /^(app|web|_features)$/m);
+  // Removing takes the folders inside, and leaves the features folder itself.
+  assert.equal(s.wag("feature/testA", "--rm").code, 0);
+  assert.equal(existsSync(join(s.projects, "_features", "feature")), false);
+  assert.equal(existsSync(join(s.projects, "_features")), true);
+});
+
+test("features: only a folder inside projects, and not one that is a repository", () => {
+  const s = setup("", ["app"]);
+  const setFeatures = (value) => writeFileSync(s.configFile, `projects: '${slash(s.projects)}'\nfeatures: '${value}'\n`);
+
+  // Anything that would land outside projects is a config error, named as one.
+  for (const outside of ["../elsewhere", "~/elsewhere", slash(join(s.root, "work")), "/abs"]) {
+    setFeatures(outside);
+    const r = s.wag("feature-a", "app");
+    assert.equal(r.code, 1, outside);
+    assert.match(r.err, /config features: must be a folder inside projects/, outside);
+  }
+  // A folder deeper inside projects is fine.
+  setFeatures("work/features");
+  const ok = s.wag("feature-a", "app");
+  assert.equal(ok.code, 0, ok.err);
+  assert.equal(ok.out, join(s.projects, "work", "features", "feature-a", "app-feature-a"));
+
+  // And the folder cannot be a repository, which is what naming a repo would do.
+  setFeatures("app");
+  const bad = s.wag("feature-b", "app");
+  assert.equal(bad.code, 1);
+  assert.match(bad.err, /is a repository, so feature folders cannot go in it/);
+});
+
 test("a feature nested under a repository folder is refused", () => {
   const s = setup();
   const r = s.wag("app/thing", "app");

@@ -16,7 +16,8 @@ Ready-made files are in [examples/](../examples): `minimal.yaml`, `config.yaml`,
 ## Overview
 
 ```yaml
-projects: ~/projects          # main checkouts and feature folders
+projects: ~/projects          # where the main checkouts are
+features: _features           # a folder inside projects for them; default: in projects itself
 
 hooks:                        # for every repo
   create: []                  # after a worktree is made
@@ -40,11 +41,42 @@ for example `config repos.api.create[0]: unknown key "too" (allowed: copy, to, o
 
 ## projects
 
-The folder with your main checkouts. Feature folders are created here too. `~` is your home folder.
-Default: `~/projects`.
+The folder with your main checkouts. `~` is your home folder. Default: `~/projects`.
 
 A repo is any git repository directly under `projects`, named by its folder. Use `repos.<name>.path`
 for a main checkout that lives somewhere else; its worktrees still go in the feature folder.
+
+## features
+
+A folder inside `projects` for the feature folders, so your main checkouts and your features are not mixed
+together. Left out, features go in `projects` itself, next to the main checkouts, which is what wag has
+always done.
+
+```yaml
+projects: ~/projects
+features: _features
+```
+
+```text
+~/projects/api/                                 main checkout
+~/projects/web/                                 main checkout
+~/projects/_features/feature/login/api-login/   worktree, branch feature/login
+~/projects/_features/feature/login/web-login/   worktree, branch feature/login
+```
+
+A feature keeps its own folder inside, with one worktree per repo:
+`<features>/<feature>/<repo>-<feature>`. Any name works, and so does a deeper one such as
+`work/features`, as long as it stays inside `projects`: an absolute path, one starting with `~`, and
+anything climbing out with `..` are all config errors, so one setting can never send worktrees off to an
+unrelated part of the disk.
+
+`repos.<name>.path` is the setting for a main checkout that lives elsewhere; it moves that checkout only,
+and its worktrees still go under `features` with all the others.
+
+The folder is created when the first worktree is, so `wag` simply says there are no features until then.
+wag only ever looks for features where `features` points, so moving it leaves existing feature folders
+behind: move them yourself, or remove them with `--rm` before you change the setting. A folder that is
+itself a git repository cannot hold feature folders, and wag says so rather than writing into it.
 
 ## Hooks
 
