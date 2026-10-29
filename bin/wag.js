@@ -9,6 +9,9 @@
 //   wag <feature> [<repo>...] --rm       remove the feature's worktrees (all of them if no repo is given)
 //
 // Rules:
+//   - A feature may be a path, like feature/tjosan-1. The branch is that whole name and the feature folder
+//     nests to match it; the worktrees inside are named after the last segment (api-tjosan-1). A trailing
+//     slash on any argument is dropped, so tab-completed folder names work: wag feature/testA repo1/ repo2/
 //   - Every repo in a feature gets a branch named <feature>, and a plain `git push` from the worktree sends it
 //     to origin/<feature>, the first time and after that. The upstream is set by that first push, not before:
 //     an upstream for a branch that is not on origin makes git say "your upstream is gone" on every status.
@@ -183,24 +186,62 @@ function inside(parent, p) {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
+/**
+ * A feature may be a path, like feature/tjosan-1, because a branch may be; a repo is one folder name.
+ * git check-ref-format does the real work: it already refuses a leading or trailing slash, a double
+ * slash, a ".." or ".x" segment and everything else that is not a branch name, so a feature can never
+ * reach outside the projects folder.
+ */
 function checkName(kind, name) {
-  if (!name || name.startsWith("-") || name.includes("/") || !gitOk(homedir(), "check-ref-format", "--branch", name)) {
-    fail(`invalid ${kind} name "${name}". Use letters, digits, dashes and dots, no spaces or slashes.`);
+  const slashes = kind === "feature";
+  if (!name || name.startsWith("-") || (!slashes && name.includes("/")) || !gitOk(homedir(), "check-ref-format", "--branch", name)) {
+    const allowed = slashes ? "slashes are allowed, spaces are not" : "no spaces or slashes";
+    fail(`invalid ${kind} name "${name}". Use letters, digits, dashes and dots; ${allowed}.`);
   }
 }
 
+/** The last segment of a feature name: what the worktree folders are named after. */
+const leafOf = (feature) => feature.slice(feature.lastIndexOf("/") + 1);
+
 const featureDir = (cfg, feature) => join(cfg.projects, feature);
-const worktreeOf = (cfg, feature, repo) => join(featureDir(cfg, feature), `${repo}-${feature}`);
+const worktreeOf = (cfg, feature, repo) => join(featureDir(cfg, feature), `${repo}-${leafOf(feature)}`);
 const hasWorktree = (cfg, feature, repo) => existsSync(join(worktreeOf(cfg, feature, repo), ".git"));
 
 /** Repos that have a worktree in the feature folder. */
 function reposIn(cfg, feature) {
   const fdir = featureDir(cfg, feature);
   if (!isDir(fdir)) return [];
+  const leaf = leafOf(feature);
   return readdirSync(fdir)
-    .filter((e) => e.endsWith(`-${feature}`) && existsSync(join(fdir, e, ".git")))
-    .map((e) => e.slice(0, -(feature.length + 1)))
+    .filter((e) => e.endsWith(`-${leaf}`) && existsSync(join(fdir, e, ".git")))
+    .map((e) => e.slice(0, -(leaf.length + 1)))
     .sort();
+}
+
+/**
+ * Feature folders under projects, as feature names. A folder holding worktrees is a feature; anything else
+ * that is not a repository is looked into, so a nested feature like feature/tjosan-1 is found. Main checkouts
+ * and worktrees are repositories, so the walk stops at them instead of reading what they contain.
+ */
+function featuresIn(cfg, dir = cfg.projects, depth = 4) {
+  const name = relative(cfg.projects, dir).split(sep).join("/");
+  if (name) {
+    if (reposIn(cfg, name).length) return [name];
+    if (existsSync(join(dir, ".git"))) return [];
+  }
+  if (depth === 0) return [];
+  return readdirSync(dir)
+    .filter((e) => !e.startsWith(".") && isDir(join(dir, e)))
+    .flatMap((e) => featuresIn(cfg, join(dir, e), depth - 1));
+}
+
+/** Drops the feature folder once it is empty, and any parent of it that this leaves empty. */
+function pruneFeatureDir(cfg, feature) {
+  let dir = featureDir(cfg, feature);
+  while (inside(cfg.projects, dir) && dir !== cfg.projects && isDir(dir) && !readdirSync(dir).length) {
+    rmSync(dir, { recursive: true });
+    dir = dirname(dir);
+  }
 }
 
 const mainDir = (cfg, repo) => cfg.repos[repo]?.path ?? join(cfg.projects, repo);
@@ -333,7 +374,7 @@ function runCommand(command, cwd, env) {
 function runHooks(cfg, event, ctx) {
   const steps = [...cfg.hooks[event], ...(cfg.repos[ctx.repo]?.[event] ?? [])];
   if (!steps.length) return;
-  info(`${event} hooks for ${ctx.repo}-${ctx.feature}:`);
+  info(`${event} hooks for ${ctx.repo}-${leafOf(ctx.feature)}:`);
   const env = { WAG_FEATURE: ctx.feature, WAG_BRANCH: ctx.feature, WAG_REPO: ctx.repo, WAG_WORKTREE: ctx.wt, WAG_MAIN: ctx.main };
   for (const step of steps) {
     if (step.run !== undefined) runCommand(step.run, ctx.wt, env);
@@ -421,7 +462,7 @@ function createOne(cfg, feature, p) {
   }
   const onOrigin = `tracking origin/${feature}`;
   const notYet = `not on origin yet; a plain git push creates origin/${feature}`;
-  info(`Created ${p.repo}-${feature} on branch ${feature}, ${p.remoteExists ? onOrigin : notYet}.`);
+  info(`Created ${p.repo}-${leafOf(feature)} on branch ${feature}, ${p.remoteExists ? onOrigin : notYet}.`);
   return undo;
 }
 
@@ -443,7 +484,10 @@ function repair(cfg, feature, repo) {
 /** Creates the missing worktrees, all or nothing. */
 function createAll(cfg, feature, repos) {
   const fdir = featureDir(cfg, feature);
-  if (existsSync(join(fdir, ".git"))) fail(`${fdir} is a repository; pick a feature name that is not a repo name`);
+  // Every segment of a nested feature becomes a folder, so none of them may be a repository.
+  for (let d = fdir; inside(cfg.projects, d) && d !== cfg.projects; d = dirname(d)) {
+    if (existsSync(join(d, ".git"))) fail(`${d} is a repository; pick a feature name that is not a repo name`);
+  }
   for (const repo of repos.filter((r) => hasWorktree(cfg, feature, r))) repair(cfg, feature, repo);
   const missing = repos.filter((r) => !hasWorktree(cfg, feature, r));
   if (!missing.length) return;
@@ -456,7 +500,7 @@ function createAll(cfg, feature, repos) {
     for (const p of prepared) undos.push(createOne(cfg, feature, p));
   } catch (e) {
     for (const undo of undos.reverse()) undo();
-    if (!fdirExisted && existsSync(fdir) && !readdirSync(fdir).length) rmSync(fdir, { recursive: true });
+    if (!fdirExisted) pruneFeatureDir(cfg, feature);
     if (undos.length) info(`Rolled back ${undos.length} worktree(s) created by this call.`);
     throw e;
   }
@@ -486,14 +530,13 @@ function removeAll(cfg, feature, repos, force) {
     git(t.main, "worktree", "remove", ...(force ? ["--force"] : []), t.wt);
     info(`Removed ${t.wt}. Branch ${feature} in ${t.repo} was kept.`);
   }
-  const fdir = featureDir(cfg, feature);
-  if (existsSync(fdir) && readdirSync(fdir).length === 0) rmSync(fdir, { recursive: true });
+  pruneFeatureDir(cfg, feature);
 }
 
 /** Worktrees of one feature, or of all features when feature is undefined. */
 function list(cfg, feature) {
   if (!isDir(cfg.projects)) fail(`${cfg.projects} does not exist (set "projects" in ${cfg.file})`);
-  const features = feature ? [feature] : readdirSync(cfg.projects).filter((f) => isDir(join(cfg.projects, f)) && !f.startsWith("."));
+  const features = feature ? [feature] : featuresIn(cfg);
   let shown = false;
   for (const f of features.sort()) {
     const repos = reposIn(cfg, f);
@@ -519,9 +562,18 @@ Usage:
                                          --force discards uncommitted changes and ignores failing hooks
   wag --version                          print the version
 
+A feature may be a path, like feature/tjosan-1: the branch is that name and the folder nests under it.
+A trailing slash, which tab completion adds to a folder name, is ignored: wag feature/testA repo1/ repo2/
+
 Config: ${configFile()}`;
 
 const FLAGS = ["--rm", "--force", "--no-start"];
+
+/**
+ * Tab completion in the shell completes folder names with a trailing separator, so `wag feature/testA/ repo1/`
+ * is what you get for typing two tabs in the projects folder. Dropping it makes those names the ones wag means.
+ */
+const trimSlashes = (a) => a.replace(/[\\/]+$/, "") || a;
 
 function main(argv) {
   if (argv.includes("--version") || argv.includes("-v")) {
@@ -537,7 +589,7 @@ function main(argv) {
   const noStart = argv.includes("--no-start");
   const picked = argv.filter((a) => a.startsWith("+")).map((a) => a.slice(1));
   const unknown = argv.filter((a) => a.startsWith("-") && !FLAGS.includes(a));
-  const [feature, ...repos] = argv.filter((a) => !a.startsWith("-") && !a.startsWith("+"));
+  const [feature, ...repos] = argv.filter((a) => !a.startsWith("-") && !a.startsWith("+")).map(trimSlashes);
   const opening = feature && repos.length && !rm;
   const dupes = repos.filter((r, i) => repos.indexOf(r) !== i);
   if (
