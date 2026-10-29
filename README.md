@@ -71,6 +71,7 @@ Then create your config from one of the [examples](examples), for example
   worktree before removing any.
 - **Local files stay local.** Files copied in by hooks are excluded from git, so they are never committed.
 - **Configured in your home folder**, in `~/.config/wag/config.yaml`. Nothing is needed in the repos.
+  `projects` is where your main checkouts are, `features` where the feature folders go (in `projects` by default).
 
 ## Development
 

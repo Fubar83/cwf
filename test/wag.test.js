@@ -213,6 +213,38 @@ test("removing a nested feature takes the empty folders above it with it", () =>
   assert.equal(existsSync(join(s.projects, "keep", "one")), false);
 });
 
+test("features: a folder under projects keeps the main checkouts and the features apart", () => {
+  const s = setup("features: _features\n", ["app", "web"]);
+  assert.match(s.wag().out, /No features yet/); // the folder is made with the first worktree
+  const r = s.wag("feature/testA", "app", "web");
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.out, join(s.projects, "_features", "feature", "testA"));
+  assert.ok(existsSync(join(s.projects, "_features", "feature", "testA", "app-testA", ".git")));
+  // The main checkouts are untouched and are not mistaken for features.
+  assert.ok(existsSync(join(s.main("app"), ".git")));
+  assert.match(s.wag().out, /^feature\/testA$/m);
+  assert.doesNotMatch(s.wag().out, /^(app|web|_features)$/m);
+  // Removing takes the folders inside, and leaves the features folder itself.
+  assert.equal(s.wag("feature/testA", "--rm").code, 0);
+  assert.equal(existsSync(join(s.projects, "_features", "feature")), false);
+  assert.equal(existsSync(join(s.projects, "_features")), true);
+});
+
+test("features: an absolute folder outside projects works too, and a repo there is refused", () => {
+  const s = setup("", ["app"]);
+  const outside = join(s.root, "work");
+  writeFileSync(s.configFile, `projects: '${slash(s.projects)}'\nfeatures: '${slash(outside)}'\n`);
+  const r = s.wag("feature-a", "app");
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.out, join(outside, "feature-a", "app-feature-a"));
+  assert.match(s.wag().out, /^feature-a$/m);
+  // A features folder that is itself a repository cannot hold feature folders.
+  writeFileSync(s.configFile, `projects: '${slash(s.projects)}'\nfeatures: app\n`);
+  const bad = s.wag("feature-b", "app");
+  assert.equal(bad.code, 1);
+  assert.match(bad.err, /is a repository, so feature folders cannot go in it/);
+});
+
 test("a feature nested under a repository folder is refused", () => {
   const s = setup();
   const r = s.wag("app/thing", "app");

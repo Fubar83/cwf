@@ -16,7 +16,8 @@ Ready-made files are in [examples/](../examples): `minimal.yaml`, `config.yaml`,
 ## Overview
 
 ```yaml
-projects: ~/projects          # main checkouts and feature folders
+projects: ~/projects          # where the main checkouts are
+features: _features           # where the feature folders go; default: in projects
 
 hooks:                        # for every repo
   create: []                  # after a worktree is made
@@ -40,11 +41,34 @@ for example `config repos.api.create[0]: unknown key "too" (allowed: copy, to, o
 
 ## projects
 
-The folder with your main checkouts. Feature folders are created here too. `~` is your home folder.
-Default: `~/projects`.
+The folder with your main checkouts. `~` is your home folder. Default: `~/projects`.
 
 A repo is any git repository directly under `projects`, named by its folder. Use `repos.<name>.path`
 for a main checkout that lives somewhere else; its worktrees still go in the feature folder.
+
+## features
+
+Where feature folders go. Left out, they go in `projects`, next to the main checkouts, which is what wag
+has always done. Set it to keep the two apart:
+
+```yaml
+projects: ~/projects
+features: _features           # a folder under projects: ~/projects/_features/<feature>
+```
+
+```yaml
+projects: ~/projects
+features: ~/work/features     # anywhere you like: ~/work/features/<feature>
+```
+
+A relative path is a folder under `projects`; an absolute path (or one starting with `~`) is used as it is.
+Either way a feature keeps its own folder inside, with one worktree per repo:
+`<features>/<feature>/<repo>-<feature>`.
+
+The folder is created when the first worktree is, so `wag` simply says there are no features until then.
+wag only ever looks for features where `features` points, so moving it leaves existing feature folders
+behind: move them yourself, or remove them with `--rm` before you change the setting. A folder that is
+itself a git repository cannot hold feature folders, and wag says so rather than writing into it.
 
 ## Hooks
 
