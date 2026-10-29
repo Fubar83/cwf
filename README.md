@@ -9,8 +9,8 @@ and branches, and runs the hooks and start commands you configure.
 ├── api/                          main checkout
 ├── web/                          main checkout
 └── feature-a/
-    ├── api-feature-a/            worktree, branch feature-a, pushes to origin/feature-a
-    └── web-feature-a/            worktree, branch feature-a, pushes to origin/feature-a
+    ├── api/                      worktree, branch feature-a, pushes to origin/feature-a
+    └── web/                      worktree, branch feature-a, pushes to origin/feature-a
 ```
 
 ```bash
@@ -62,8 +62,8 @@ Then create your config from one of the [examples](examples), for example
 ## In short
 
 - **Same branch name everywhere**, so a plain `git push` just works, the first time and after that.
-- **A feature can be a path**, like `feature/tjosan-1`: the branch is that name and the folders nest to match.
-  A trailing slash from tab completion is ignored, so `wag feature/testA repo1/ repo2/` works.
+- **A feature can be a path**, like `feature/abc123`: the branch keeps the slashes, the folder turns them into
+  dashes (`feature-abc123`). A trailing slash from tab completion is ignored, so `wag feature/abc123 repo-1/` works.
 - **Main checkouts stay on the default branch**, and are put back on it, when clean, as a worktree is created.
 - **Nothing is guessed.** A missing origin, a failed fetch, a bad name, a branch checked out elsewhere,
   a diverged branch or a config mistake stops wag before it changes anything.

@@ -25,7 +25,7 @@ repo of the feature; in a worktree it shows that repo. This is its real output f
 
 ```text
 git view · green staged · red not staged · ?? new · 14:03:12
-api-feature-a
+api
 ## feature-a...origin/feature-a [ahead 1]
 A  CsvExportTests.cs
  M Program.cs
@@ -37,7 +37,7 @@ A  CsvExportTests.cs
 c6cd5cb (origin/feature-a) Add CSV export endpoint
 cfe1e65 (main) Initial commit
 
-web-feature-a
+web
 ## feature-a (not pushed yet)
 A  DownloadButton.tsx
    staged: 1 file changed, 1 insertion(+)
@@ -148,10 +148,10 @@ autostart: [tmux]
 ```text
 tmux session "feature-a"
 ┌─────────────────────────────┬─────────────────────────────┐
-│ agent                       │ git view  api-feature-a     │
+│ agent                       │ git view  api               │
 │                             │                             │
 │ runs in                     ├─────────────────────────────┤
-│ ~/projects/feature-a,       │ git view  web-feature-a     │
+│ ~/projects/feature-a,       │ git view  web               │
 │ sees every repo             │                             │
 └─────────────────────────────┴─────────────────────────────┘
 ```
@@ -217,11 +217,11 @@ autostart: [tmux]
 ```text
 tmux session "feature-a"                       windows: 0:api*  1:web  2:docs
 ┌─────────────────────────────┬─────────────────────────────┐
-│ agent                       │ git view  api-feature-a     │
+│ agent                       │ git view  api               │
 │                             │                             │
 │ runs in                     │                             │
 │ ~/projects/feature-a,       ├─────────────────────────────┤
-│ never moves                 │ terminal  api-feature-a 25% │
+│ never moves                 │ terminal  api          25%  │
 └─────────────────────────────┴─────────────────────────────┘
 prefix g: the next repo's git pane and terminal take the right half
 ```
