@@ -60,12 +60,12 @@ features: _features
 ```text
 ~/projects/api/                                 main checkout
 ~/projects/web/                                 main checkout
-~/projects/_features/feature/login/api-login/   worktree, branch feature/login
-~/projects/_features/feature/login/web-login/   worktree, branch feature/login
+~/projects/_features/feature-login/api/         worktree, branch feature/login
+~/projects/_features/feature-login/web/         worktree, branch feature/login
 ```
 
 A feature keeps its own folder inside, with one worktree per repo:
-`<features>/<feature>/<repo>-<feature>`. Any name works, and so does a deeper one such as
+`<features>/<feature>/<repo>`. Any name works, and so does a deeper one such as
 `work/features`, as long as it stays inside `projects`: an absolute path, one starting with `~`, and
 anything climbing out with `..` are all config errors, so one setting can never send worktrees off to an
 unrelated part of the disk.

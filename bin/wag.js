@@ -11,9 +11,9 @@
 // Rules:
 //   - Main checkouts live in "projects". Feature folders go there too, or in a folder inside it that the
 //     "features" setting names, like "_features". It is always inside projects, never anywhere else.
-//   - A feature may be a path, like feature/tjosan-1. The branch is that whole name and the feature folder
-//     nests to match it; the worktrees inside are named after the last segment (api-tjosan-1). A trailing
-//     slash on any argument is dropped, so tab-completed folder names work: wag feature/testA repo1/ repo2/
+//   - A feature may be a path, like feature/abc123. The branch is that whole name; the feature folder is it
+//     with dashes for slashes (feature-abc123), and inside it each worktree is named after its repo alone.
+//     A trailing slash on any argument is dropped, so tab-completed names work: wag feature/abc123 repo-1/
 //   - Every repo in a feature gets a branch named <feature>, and a plain `git push` from the worktree sends it
 //     to origin/<feature>, the first time and after that. The upstream is set by that first push, not before:
 //     an upstream for a branch that is not on origin makes git say "your upstream is gone" on every status.
@@ -206,7 +206,7 @@ function inside(parent, p) {
 }
 
 /**
- * A feature may be a path, like feature/tjosan-1, because a branch may be; a repo is one folder name.
+ * A feature may be a path, like feature/abc123, because a branch may be; a repo is one folder name.
  * git check-ref-format does the real work: it already refuses a leading or trailing slash, a double
  * slash, a ".." or ".x" segment and everything else that is not a branch name, so a feature can never
  * reach outside the projects folder.
@@ -219,48 +219,49 @@ function checkName(kind, name) {
   }
 }
 
-/** The last segment of a feature name: what the worktree folders are named after. */
-const leafOf = (feature) => feature.slice(feature.lastIndexOf("/") + 1);
+/**
+ * One flat folder per feature, named after the branch with its slashes turned into dashes, so
+ * feature/abc123 is the folder feature-abc123. Inside it a worktree is named after its repo and nothing
+ * else: the folder it sits in already says which feature it belongs to.
+ */
+const folderOf = (feature) => feature.replaceAll("/", "-");
 
-const featureDir = (cfg, feature) => join(cfg.features, feature);
-const worktreeOf = (cfg, feature, repo) => join(featureDir(cfg, feature), `${repo}-${leafOf(feature)}`);
+const featureDir = (cfg, feature) => join(cfg.features, folderOf(feature));
+const worktreeOf = (cfg, feature, repo) => join(featureDir(cfg, feature), repo);
 const hasWorktree = (cfg, feature, repo) => existsSync(join(worktreeOf(cfg, feature, repo), ".git"));
 
-/** Repos that have a worktree in the feature folder. */
+/** Repos that have a worktree in the feature folder: every worktree in it, by its folder name. */
 function reposIn(cfg, feature) {
   const fdir = featureDir(cfg, feature);
   if (!isDir(fdir)) return [];
-  const leaf = leafOf(feature);
   return readdirSync(fdir)
-    .filter((e) => e.endsWith(`-${leaf}`) && existsSync(join(fdir, e, ".git")))
-    .map((e) => e.slice(0, -(leaf.length + 1)))
+    .filter((e) => existsSync(join(fdir, e, ".git")))
     .sort();
 }
 
+/** The branch a worktree is on, "" when it has none or git cannot say. */
+const branchIn = (wt) => gitOut(wt, "branch", "--show-current");
+
 /**
- * Feature folders under projects, as feature names. A folder holding worktrees is a feature; anything else
- * that is not a repository is looked into, so a nested feature like feature/tjosan-1 is found. Main checkouts
- * and worktrees are repositories, so the walk stops at them instead of reading what they contain.
+ * Features that have worktrees, by name. The folder name is the branch with dashes for slashes, which is
+ * not reversible, so the name comes from the branch its worktrees are on; the folder name is the fallback.
  */
-function featuresIn(cfg, dir = cfg.features, depth = 4) {
-  const name = relative(cfg.features, dir).split(sep).join("/");
-  if (name) {
-    if (reposIn(cfg, name).length) return [name];
-    if (existsSync(join(dir, ".git"))) return [];
-  }
-  if (depth === 0) return [];
-  return readdirSync(dir)
-    .filter((e) => !e.startsWith(".") && isDir(join(dir, e)))
-    .flatMap((e) => featuresIn(cfg, join(dir, e), depth - 1));
+function featuresIn(cfg) {
+  return readdirSync(cfg.features)
+    // A repository is a main checkout, never a feature folder, so its own contents are never read: a repo
+    // with a nested one in it (a submodule, something vendored under node_modules) is not a feature.
+    .filter((e) => !e.startsWith(".") && isDir(join(cfg.features, e)) && !existsSync(join(cfg.features, e, ".git")))
+    .map((e) => {
+      const repos = reposIn(cfg, e);
+      return repos.length ? branchIn(join(cfg.features, e, repos[0])) || e : undefined;
+    })
+    .filter(Boolean);
 }
 
-/** Drops the feature folder once it is empty, and any parent of it that this leaves empty. */
+/** Drops the feature folder once it is empty. The features folder itself is left alone. */
 function pruneFeatureDir(cfg, feature) {
-  let dir = featureDir(cfg, feature);
-  while (inside(cfg.features, dir) && dir !== cfg.features && isDir(dir) && !readdirSync(dir).length) {
-    rmSync(dir, { recursive: true });
-    dir = dirname(dir);
-  }
+  const dir = featureDir(cfg, feature);
+  if (dir !== cfg.features && isDir(dir) && !readdirSync(dir).length) rmSync(dir, { recursive: true });
 }
 
 const mainDir = (cfg, repo) => cfg.repos[repo]?.path ?? join(cfg.projects, repo);
@@ -393,7 +394,7 @@ function runCommand(command, cwd, env) {
 function runHooks(cfg, event, ctx) {
   const steps = [...cfg.hooks[event], ...(cfg.repos[ctx.repo]?.[event] ?? [])];
   if (!steps.length) return;
-  info(`${event} hooks for ${ctx.repo}-${leafOf(ctx.feature)}:`);
+  info(`${event} hooks for ${folderOf(ctx.feature)}/${ctx.repo}:`);
   const env = { WAG_FEATURE: ctx.feature, WAG_BRANCH: ctx.feature, WAG_REPO: ctx.repo, WAG_WORKTREE: ctx.wt, WAG_MAIN: ctx.main };
   for (const step of steps) {
     if (step.run !== undefined) runCommand(step.run, ctx.wt, env);
@@ -481,7 +482,7 @@ function createOne(cfg, feature, p) {
   }
   const onOrigin = `tracking origin/${feature}`;
   const notYet = `not on origin yet; a plain git push creates origin/${feature}`;
-  info(`Created ${p.repo}-${leafOf(feature)} on branch ${feature}, ${p.remoteExists ? onOrigin : notYet}.`);
+  info(`Created ${folderOf(feature)}/${p.repo} on branch ${feature}, ${p.remoteExists ? onOrigin : notYet}.`);
   return undo;
 }
 
@@ -503,15 +504,13 @@ function repair(cfg, feature, repo) {
 /** Creates the missing worktrees, all or nothing. */
 function createAll(cfg, feature, repos) {
   const fdir = featureDir(cfg, feature);
-  // Every segment of a nested feature becomes a folder, so none of them may be a repository.
-  for (let d = fdir; inside(cfg.features, d); d = dirname(d)) {
-    if (existsSync(join(d, ".git"))) {
-      fail(d === cfg.features
-        ? `${d} is a repository, so feature folders cannot go in it. Point "features" somewhere else in ${cfg.file}.`
-        : `${d} is a repository; pick a feature name that is not a repo name`);
-    }
-    if (d === cfg.features) break;
+  if (existsSync(join(cfg.features, ".git"))) {
+    fail(`${cfg.features} is a repository, so feature folders cannot go in it. Point "features" somewhere else in ${cfg.file}.`);
   }
+  if (existsSync(join(fdir, ".git"))) fail(`${fdir} is a repository; pick a feature name that is not a repo name`);
+  // Slashes become dashes, so feature/abc123 and feature-abc123 want the same folder. Whoever is in it keeps it.
+  const taken = reposIn(cfg, feature).map((r) => branchIn(worktreeOf(cfg, feature, r))).find((b) => b && b !== feature);
+  if (taken) fail(`${fdir} already holds ${taken}, which uses the same folder name as ${feature}. Pick another name.`);
   for (const repo of repos.filter((r) => hasWorktree(cfg, feature, r))) repair(cfg, feature, repo);
   const missing = repos.filter((r) => !hasWorktree(cfg, feature, r));
   if (!missing.length) return;
@@ -587,8 +586,8 @@ Usage:
                                          --force discards uncommitted changes and ignores failing hooks
   wag --version                          print the version
 
-A feature may be a path, like feature/tjosan-1: the branch is that name and the folder nests under it.
-A trailing slash, which tab completion adds to a folder name, is ignored: wag feature/testA repo1/ repo2/
+A feature may be a path, like feature/abc123: the branch keeps the slashes, its folder uses dashes.
+A trailing slash, which tab completion adds to a folder name, is ignored: wag feature/abc123 repo-1/ repo-2/
 
 Config: ${configFile()}`;
 

@@ -56,7 +56,7 @@ function setup(config = "", repos = ["app"]) {
     wag,
     origin: (repo = "app") => join(root, `${repo}.git`),
     main: (repo = "app") => join(projects, repo),
-    wt: (repo = "app", feature = "feature-a") => join(projects, feature, `${repo}-${feature}`),
+    wt: (repo = "app", feature = "feature-a") => join(projects, feature.replaceAll("/", "-"), repo),
   };
 }
 
@@ -150,7 +150,7 @@ test("listing shows features and their worktrees", () => {
   const all = s.wag();
   assert.equal(all.code, 0);
   assert.match(all.out, /^feature-a\n\s+app\s+.*\n\s+web\s+/);
-  assert.match(s.wag("feature-a").out, /web-feature-a/);
+  assert.match(s.wag("feature-a").out, /feature-a[\\/]web$/m);
   assert.match(s.wag("nope").out, /No worktrees for nope/);
 });
 
@@ -169,48 +169,66 @@ test("invalid names are refused and leave nothing behind", () => {
   assert.match(repo.err, /invalid repo name "app\/sub"/);
 });
 
-test("a feature can be a path: the folder nests and the worktrees are named after the last segment", () => {
+test("a feature can be a path: one flat folder, with each worktree named after its repo", () => {
   const s = setup("", ["app", "web"]);
-  const r = s.wag("feature/testA", "app", "web");
+  const r = s.wag("feature/abc123", "app", "web");
   assert.equal(r.code, 0, r.err);
-  assert.equal(r.out, join(s.projects, "feature", "testA"));
+  // Slashes become dashes in the folder name; the branch keeps them.
+  assert.equal(r.out, join(s.projects, "feature-abc123"));
   for (const repo of ["app", "web"]) {
-    const wt = join(s.projects, "feature", "testA", `${repo}-testA`);
+    const wt = join(s.projects, "feature-abc123", repo);
     assert.ok(existsSync(join(wt, ".git")), `${repo} worktree`);
-    assert.equal(git(wt, "branch", "--show-current"), "feature/testA");
+    assert.equal(git(wt, "branch", "--show-current"), "feature/abc123");
   }
-  assert.match(r.err, /Created app-testA on branch feature\/testA/);
-  // Listing finds it nested, under its full name.
-  assert.match(s.wag().out, /^feature\/testA$/m);
-  assert.match(s.wag("feature/testA").out, /app-testA/);
-  // The main checkout is not mistaken for a feature folder, and "feature" alone is not one either.
-  assert.doesNotMatch(s.wag().out, /^(app|web|feature)$/m);
+  assert.match(r.err, /Created feature-abc123\/app on branch feature\/abc123/);
+  // Listed under its branch, which is the name the folder cannot spell.
+  assert.match(s.wag().out, /^feature\/abc123$/m);
+  assert.match(s.wag("feature/abc123").out, /feature-abc123[\\/]app$/m);
+  // The main checkouts are not mistaken for feature folders.
+  assert.doesNotMatch(s.wag().out, /^(app|web)$/m);
+});
+
+test("a feature whose folder name another feature already uses is refused", () => {
+  const s = setup();
+  s.wag("feature/abc123", "app");
+  const r = s.wag("feature-abc123", "app");
+  assert.equal(r.code, 1);
+  assert.match(r.err, /already holds feature\/abc123, which uses the same folder name/);
+});
+
+test("a repository with a nested repository in it is not mistaken for a feature", () => {
+  const s = setup();
+  mkdirSync(join(s.main(), "node_modules", "pkg"), { recursive: true });
+  git(join(s.main(), "node_modules", "pkg"), "init", "-q");
+  s.wag("feature-a", "app");
+  assert.match(s.wag().out, /^feature-a$/m);
+  assert.doesNotMatch(s.wag().out, /^app$/m);
 });
 
 test("a trailing slash from tab completion is dropped, on the feature and on each repo", () => {
   const s = setup("", ["app", "web"]);
   const r = s.wag("feature/testA/", "app/", "web/");
   assert.equal(r.code, 0, r.err);
-  assert.equal(r.out, join(s.projects, "feature", "testA"));
-  assert.ok(existsSync(join(s.projects, "feature", "testA", "app-testA", ".git")));
+  assert.equal(r.out, join(s.projects, "feature-testA"));
+  assert.ok(existsSync(join(s.projects, "feature-testA", "app", ".git")));
   // Still the same feature when it is opened again without the slashes.
-  assert.equal(s.wag("feature/testA", "app").out, join(s.projects, "feature", "testA", "app-testA"));
+  assert.equal(s.wag("feature/testA", "app").out, join(s.projects, "feature-testA", "app"));
   // And a repo named twice is still a duplicate once the slashes are gone.
   assert.equal(s.wag("feature-b", "app/", "app").code, 1);
 });
 
-test("removing a nested feature takes the empty folders above it with it", () => {
+test("removing a feature takes its folder with it, and leaves the other features alone", () => {
   const s = setup();
   s.wag("a/b/c", "app");
-  assert.ok(existsSync(join(s.projects, "a", "b", "c", "app-c", ".git")));
+  assert.ok(existsSync(join(s.projects, "a-b-c", "app", ".git")));
   assert.equal(s.wag("a/b/c", "--rm").code, 0);
-  assert.equal(existsSync(join(s.projects, "a")), false);
-  // A folder that still holds something is kept.
+  assert.equal(existsSync(join(s.projects, "a-b-c")), false);
+
   s.wag("keep/one", "app");
   s.wag("keep/two", "app");
   assert.equal(s.wag("keep/one", "--rm").code, 0);
-  assert.equal(existsSync(join(s.projects, "keep", "two", "app-two")), true);
-  assert.equal(existsSync(join(s.projects, "keep", "one")), false);
+  assert.equal(existsSync(join(s.projects, "keep-two", "app")), true);
+  assert.equal(existsSync(join(s.projects, "keep-one")), false);
 });
 
 test("features: a folder under projects keeps the main checkouts and the features apart", () => {
@@ -218,15 +236,15 @@ test("features: a folder under projects keeps the main checkouts and the feature
   assert.match(s.wag().out, /No features yet/); // the folder is made with the first worktree
   const r = s.wag("feature/testA", "app", "web");
   assert.equal(r.code, 0, r.err);
-  assert.equal(r.out, join(s.projects, "_features", "feature", "testA"));
-  assert.ok(existsSync(join(s.projects, "_features", "feature", "testA", "app-testA", ".git")));
+  assert.equal(r.out, join(s.projects, "_features", "feature-testA"));
+  assert.ok(existsSync(join(s.projects, "_features", "feature-testA", "app", ".git")));
   // The main checkouts are untouched and are not mistaken for features.
   assert.ok(existsSync(join(s.main("app"), ".git")));
   assert.match(s.wag().out, /^feature\/testA$/m);
   assert.doesNotMatch(s.wag().out, /^(app|web|_features)$/m);
-  // Removing takes the folders inside, and leaves the features folder itself.
+  // Removing takes the feature folder, and leaves the features folder itself.
   assert.equal(s.wag("feature/testA", "--rm").code, 0);
-  assert.equal(existsSync(join(s.projects, "_features", "feature")), false);
+  assert.equal(existsSync(join(s.projects, "_features", "feature-testA")), false);
   assert.equal(existsSync(join(s.projects, "_features")), true);
 });
 
@@ -245,7 +263,7 @@ test("features: only a folder inside projects, and not one that is a repository"
   setFeatures("work/features");
   const ok = s.wag("feature-a", "app");
   assert.equal(ok.code, 0, ok.err);
-  assert.equal(ok.out, join(s.projects, "work", "features", "feature-a", "app-feature-a"));
+  assert.equal(ok.out, join(s.projects, "work", "features", "feature-a", "app"));
 
   // And the folder cannot be a repository, which is what naming a repo would do.
   setFeatures("app");
@@ -254,12 +272,16 @@ test("features: only a folder inside projects, and not one that is a repository"
   assert.match(bad.err, /is a repository, so feature folders cannot go in it/);
 });
 
-test("a feature nested under a repository folder is refused", () => {
+test("a feature starting with a repo name is fine: flattening keeps it out of the repository", () => {
   const s = setup();
+  // app/thing is the folder app-thing, beside the app checkout rather than inside it.
   const r = s.wag("app/thing", "app");
-  assert.equal(r.code, 1);
-  assert.match(r.err, /is a repository/);
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.out, join(s.projects, "app-thing", "app"));
   assert.equal(existsSync(join(s.projects, "app", "thing")), false);
+  assert.equal(git(r.out, "branch", "--show-current"), "app/thing");
+  // Only a name that lands on the repo folder itself is refused, which "wag app app" already covers.
+  assert.match(s.wag("app", "app").err, /is a repository/);
 });
 
 test("a feature named like a repository is refused", () => {
@@ -647,7 +669,7 @@ test("a repo can live outside the projects folder via path", () => {
   writeFileSync(s.configFile, `projects: '${slash(s.projects)}'\nrepos:\n  ext:\n    path: '${slash(elsewhere)}'\n`);
   const r = s.wag("feature-a", "ext");
   assert.equal(r.code, 0, r.err);
-  assert.equal(r.out, join(s.projects, "feature-a", "ext-feature-a"));
+  assert.equal(r.out, join(s.projects, "feature-a", "ext"));
 });
 
 test("--version prints the version from package.json", () => {
@@ -688,6 +710,6 @@ test("examples/git-view.sh shows branch, files and commits of a worktree", { ski
   assert.match(out, /Add CSV export/);
 
   const feature = spawnSync("sh", [view, "--once", join(s.projects, "feature-a")], { encoding: "utf8" });
-  assert.match(feature.stdout.replace(/\x1b\[[0-9;]*m/g, ""), /^app-feature-a$/m);
+  assert.match(feature.stdout.replace(/\x1b\[[0-9;]*m/g, ""), /^app$/m);
 });
 

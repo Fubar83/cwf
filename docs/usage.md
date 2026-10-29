@@ -10,19 +10,20 @@ the feature's name. Your main checkouts are left alone, so you can work on sever
 ├── api/                          main checkout of api, left alone
 ├── web/                          main checkout of web
 └── feature-a/                    the feature folder
-    ├── api-feature-a/            worktree of api, branch feature-a, pushes to origin/feature-a
-    └── web-feature-a/            worktree of web, branch feature-a, pushes to origin/feature-a
+    ├── api/                      worktree of api, branch feature-a, pushes to origin/feature-a
+    └── web/                      worktree of web, branch feature-a, pushes to origin/feature-a
 ```
 
 - **Main checkouts** are the normal clones, directly under `projects` (or wherever a repo's `path` says).
   Creating a worktree puts a main checkout that sits on another branch back on origin's default branch,
   as long as it is clean; one with uncommitted changes is left alone, with a note.
-- **The feature folder** is `projects/<feature>`. It only holds worktrees. A feature whose name is a path,
-  like `feature/tjosan-1`, nests to match it: `projects/feature/tjosan-1`. Set `features` in the config to collect feature
-  folders in a folder of their own inside `projects` ([configuration](configuration.md#features)).
-- **Each worktree** is `projects/<feature>/<repo>-<feature>`, made with `git worktree`. Nothing is copied:
-  git shares the repository between the main checkout and its worktrees. For a nested feature the folder is
-  named after the last segment only, so `feature/tjosan-1` gives `api-tjosan-1`, not `api-feature-tjosan-1`.
+- **The feature folder** is `projects/<feature>`, one flat folder per feature holding nothing but worktrees.
+  A feature whose name is a path gets its slashes turned into dashes, so `feature/abc123` is the folder
+  `feature-abc123`. Set `features` in the config to collect feature folders in a folder of their own inside
+  `projects` ([configuration](configuration.md#features)).
+- **Each worktree** is `projects/<feature>/<repo>`, made with `git worktree`. It is named after its repo and
+  nothing else, because the folder it sits in already says which feature it belongs to. Nothing is copied:
+  git shares the repository between the main checkout and its worktrees.
 - **The branch** is `<feature>` in every repo. A plain `git push` from a worktree creates or updates the
   same-named branch on origin, both the first time and later on; the first push is also what sets the
   upstream. Until then the branch deliberately has none, because an upstream naming a branch that is not on
@@ -31,33 +32,37 @@ the feature's name. Your main checkouts are left alone, so you can work on sever
 
 ### Features with slashes, and tab completion
 
-A feature name can be anything git takes as a branch name, slashes included, and the folders follow it:
+A feature name can be anything git takes as a branch name, slashes included. The branch keeps the slashes;
+the folder is the same name with dashes instead, so it stays one flat folder:
 
 ```text
+$ wag feature/abc123 repo-1 repo-2
+
 ~/projects/
-├── api/                          main checkout of api
-├── web/                          main checkout of web
-└── feature/                      just a folder: not a feature itself
-    └── tjosan-1/                 the feature folder for feature/tjosan-1
-        ├── api-tjosan-1/         worktree of api, branch feature/tjosan-1
-        └── web-tjosan-1/         worktree of web, branch feature/tjosan-1
+├── repo-1/                       main checkout of repo-1
+├── repo-2/                       main checkout of repo-2
+└── feature-abc123/               the feature folder for branch feature/abc123
+    ├── repo-1/                   worktree of repo-1, branch feature/abc123
+    └── repo-2/                   worktree of repo-2, branch feature/abc123
 ```
 
-`wag` lists it under its full name, `feature/tjosan-1`, and `feature` on its own is not a feature: a folder
-counts as one only when it holds worktrees. Removing the last worktree of a feature takes the folders above it
-too, as far up as they are left empty.
+`wag` lists it under its branch, `feature/abc123`, not under the folder name: the folder name cannot be
+turned back into the branch, so wag reads the branch out of the worktrees themselves.
 
-Because the layout mirrors the names, tab completion in the projects folder writes the arguments for you. It
-adds a trailing slash to each folder name, and wag drops it, so this is a feature name and two repos:
+Since slashes become dashes, `feature/abc123` and `feature-abc123` want the same folder. Whichever exists
+keeps it, and the other is refused by name rather than quietly sharing it.
+
+Tab completion in the projects folder writes the arguments for you: it adds a trailing slash to each folder
+name, and wag drops it, so this is a feature name and two repos:
 
 ```bash
 cd ~/projects
-wag feature/testA repo1/ repo2/      # the slashes come from pressing tab; wag reads repo1 and repo2
+wag feature/abc123 repo-1/ repo-2/   # the slashes come from pressing tab; wag reads repo-1 and repo-2
 ```
 
 Only what git refuses is refused: `feat//login`, `feat/.login`, a leading or trailing slash on its own, and
 the usual `bad name` or `a..b`. A repo argument is always a single folder name, so `app/sub` is an error.
-One thing git itself will not do is let `feature` and `feature/tjosan-1` both be branches in the same repo;
+One thing git itself will not do is let `feature` and `feature/abc123` both be branches in the same repo;
 it reports that, and wag passes the message on.
 
 ## Commands
@@ -74,7 +79,7 @@ it reports that, and wag passes the message on.
 | `--force` (with `--rm`) | Removes even with uncommitted changes, and ignores failing remove hooks. |
 | `wag --help` | Shows usage and which config file is used. |
 
-A feature may be a path (`feature/tjosan-1`); a repo is one folder name. A trailing slash on any argument,
+A feature may be a path (`feature/abc123`); a repo is one folder name. A trailing slash on any argument,
 which tab completion adds, is ignored.
 
 The printed path is the worktree when you name one repo, and the feature folder when you name several.
@@ -91,23 +96,23 @@ $ wag
 No features yet. Create one with: wag <feature> <repo>...
 
 $ wag feature-a api web
-create hooks for api-feature-a:
+create hooks for feature-a/api:
   copied .env
   run: git log --oneline -1
 093cdd3 Initial commit
-Created api-feature-a on branch feature-a, not on origin yet; a plain git push creates origin/feature-a.
-create hooks for web-feature-a:
+Created feature-a/api on branch feature-a, not on origin yet; a plain git push creates origin/feature-a.
+create hooks for feature-a/web:
   skip copy: ~/projects/web/.env does not exist (optional)
-Created web-feature-a on branch feature-a, not on origin yet; a plain git push creates origin/feature-a.
+Created feature-a/web on branch feature-a, not on origin yet; a plain git push creates origin/feature-a.
 ~/projects/feature-a
 
 $ wag
 feature-a
-  api                  ~/projects/feature-a/api-feature-a
-  web                  ~/projects/feature-a/web-feature-a
+  api                  ~/projects/feature-a/api
+  web                  ~/projects/feature-a/web
 
 $ wag feature-a api
-~/projects/feature-a/api-feature-a
+~/projects/feature-a/api
 ```
 
 The second call to `wag feature-a api` only prints the path: the worktree already exists.
@@ -128,11 +133,11 @@ gh pr create --fill --draft
 ```text
 $ wag feature-a --rm
 wag: uncommitted changes in:
-  ~/projects/feature-a/web-feature-a
+  ~/projects/feature-a/web
 Commit them, or add --force to discard them. Nothing was removed.
 
 $ wag feature-a web --rm
-Removed ~/projects/feature-a/web-feature-a. Branch feature-a in web was kept.
+Removed ~/projects/feature-a/web. Branch feature-a in web was kept.
 ```
 
 wag checks every worktree before removing any of them, so a refusal never leaves a feature half removed.
