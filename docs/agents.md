@@ -23,7 +23,7 @@ Windows Terminal; use whatever terminal you have):
 ```yaml
 start:
   agent:
-    - run: wt -w 0 nt -d "%WAG_FEATURE_DIR%" claude
+    - wt -w 0 nt -d "$WAG_FEATURE_DIR" claude
 autostart: [agent]
 ```
 
@@ -53,7 +53,8 @@ are ordinary files in that repo, shared through git like any other.
 
 - **Same branch everywhere** means an agent working across repos commits to `feature-a` in each of them, and a
   plain `git push` per repo publishes it.
-- **Local files stay local:** `.env` files and settings copied in by hooks are excluded from git, so an agent's
-  `git add -A` never commits them.
+- **Hooks set a worktree up** the way you would by hand: `.env` files, local settings, dependencies. Add what
+  a hook brings in to the repo's `.gitignore` or its local exclude list if an agent's `git add -A` must not
+  commit it — wag does not exclude anything for you.
 - **Main checkouts stay untouched,** and every feature has its own worktrees, so you can run another agent on
   another feature at the same time.

@@ -1,18 +1,16 @@
 # wag config: a small starting point that works on Windows, Linux and macOS.
-# Copy to ~/.config/wag/config.yaml.
+# Copy to ~/.config/wag/config.yaml. Every step is a bash command line.
 
 projects: ~/projects
 
 hooks:
   create:
-    # Bring each repo's local .env (from its main checkout) into new worktrees.
-    - copy: .env
-      optional: true
+    # Bring each repo's local .env (from its main checkout) into new worktrees, if it has one.
+    - cp "$WAG_MAIN/.env" .env 2>/dev/null || true
 
 repos:
   api:
     create:
       # Local app settings kept in your home folder, never committed.
-      - copy: ~/secrets/api/appsettings.Development.json
-        to: src/Api/appsettings.Development.json
-      - run: npm ci
+      - cp ~/secrets/api/appsettings.Development.json src/Api/appsettings.Development.json
+      - npm ci

@@ -97,12 +97,12 @@ No features yet. Create one with: wag <feature> <repo>...
 
 $ wag feature-a api web
 create hooks for feature-a/api:
-  copied .env
-  run: git log --oneline -1
+  $ cp "$WAG_MAIN/.env" .env 2>/dev/null || true
+  $ git log --oneline -1
 093cdd3 Initial commit
 Created feature-a/api on branch feature-a, not on origin yet; a plain git push creates origin/feature-a.
 create hooks for feature-a/web:
-  skip copy: ~/projects/web/.env does not exist (optional)
+  $ cp "$WAG_MAIN/.env" .env 2>/dev/null || true
 Created feature-a/web on branch feature-a, not on origin yet; a plain git push creates origin/feature-a.
 ~/projects/feature-a
 
@@ -193,8 +193,8 @@ wag feature-a api                          # now works
   is rolled back. A main checkout that was put back on the default branch stays there: nothing is lost by it.
 - **New branches start from origin.** A new branch starts from `origin/<feature>` if it exists, otherwise from
   origin's default branch, never from whatever happens to be checked out locally.
-- **Local files stay local.** Files copied in by hooks are added to the repo's local exclude list
-  (`.git/info/exclude`), so they never show up as changes and are never committed.
+- **Steps are yours.** A hook step is a bash command line run in the worktree, so a `.env` a hook copies in
+  is simply an untracked file: wag does not add anything to `.gitignore` or the exclude list for you.
 
 ```text
 $ wag "bad name" api

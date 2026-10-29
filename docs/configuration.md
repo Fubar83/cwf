@@ -31,7 +31,7 @@ repos:                        # per repo, by folder name
 
 start:                        # start profiles, picked with +name
   hello:
-    - run: echo "Working on $WAG_FEATURE"
+    - echo "Working on $WAG_FEATURE"
 
 autostart: [hello]            # profiles to run when no +name is given
 ```
@@ -86,26 +86,58 @@ Hooks run for one worktree at a time:
 - **remove** runs before the worktree is removed. If a step fails, nothing is removed, unless you pass `--force`.
 
 The steps under `hooks` run for every repo first, then the steps under `repos.<name>` for that repo.
-There are two kinds of step.
 
-### copy
+## Steps
 
-Copies a file or folder into the worktree.
+A step is one **bash** command line, written as a plain string. There is no key to name it and nothing else a
+step can be: copying a file in is `cp`, as it would be in any script.
 
-| Key | Meaning |
-|---|---|
-| `copy` | The source. A relative path is taken from the repo's **main checkout**, so `copy: .env` brings in the main checkout's local `.env`. A path starting with `~` or an absolute path can point anywhere, such as a secrets folder in your home. |
-| `to` | Where it goes, relative to the worktree. Default: the same relative path for a relative source, otherwise the source's file name. It cannot point outside the worktree. |
-| `optional` | `true` skips the step when the source does not exist. Otherwise a missing source is an error. |
-| `overwrite` | `true` allows replacing a file that already exists in the worktree. Otherwise that is an error. |
+```yaml
+hooks:
+  create:
+    - cp "$WAG_MAIN/.env" .env 2>/dev/null || true
+    - npm ci
+```
 
-Copied files are added to the repo's local exclude list, so `git status` stays clean and they can never be committed.
-If you overwrite a file git tracks, wag says so: that file will show as modified.
+Hook steps run in the worktree; start profile steps run in the path wag prints. Either way the step's output
+goes to stderr, so it never mixes with that path. A step that exits non-zero fails: a create hook rolls the
+whole call back, a remove hook stops the removal. Use `|| true` for something allowed to fail, as above for
+a `.env` that may not exist.
 
-### run
+bash has to be on PATH. It is there already on Linux and macOS; on Windows it is Git Bash, which comes with
+git, so `C:/Program Files/Git/bin` needs to be on PATH. One shell everywhere means one way to write a step —
+`$WAG_REPO`, not `%WAG_REPO%` — and a multi-line step is an ordinary bash script:
 
-Runs a command in the worktree, with your system shell: `sh` on Linux and macOS, `cmd.exe` on Windows.
-The command's output goes to stderr, so it never mixes with the path wag prints.
+```yaml
+hooks:
+  create:
+    - |
+      if [ -f package-lock.json ]; then npm ci
+      elif [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile
+      fi
+```
+
+### Script files
+
+A step whose first word is a file **next to the config file** is run as that script, with bash, keeping any
+arguments after it. So `~/.config/wag/setup.sh` is reached as `setup.sh`:
+
+```yaml
+hooks:
+  create:
+    - setup.sh --verbose
+```
+
+It needs no execute bit and no shebang, because wag runs `bash <the file>`. The first word has to be a bare
+name: anything with a slash in it is a path like any other, taken from the folder the step runs in. wag says
+which steps it took this way, so a step that is meant to be a command but happens to share a name with a file
+next to your config is visible rather than silent:
+
+```text
+  $ setup.sh --verbose   (script next to config.yaml)
+```
+
+### Variables
 
 | Variable | Value |
 |---|---|
@@ -115,24 +147,24 @@ The command's output goes to stderr, so it never mixes with the path wag prints.
 | `WAG_WORKTREE` | The worktree's full path. |
 | `WAG_MAIN` | The main checkout's full path. |
 
-On Windows, write variables the `cmd.exe` way, as `%WAG_FEATURE%`.
+Start profiles get a different set, listed in [agents.md](agents.md).
 
 ### Examples
 
-Local secrets and settings, kept in your home folder:
+Local secrets and settings, kept in your home folder. Nothing is excluded from git for you, so a file you
+bring in shows up as untracked: add it to the repo's `.gitignore`, or to its local exclude list, if that
+matters to you.
 
 ```yaml
 hooks:
   create:
-    - copy: .env                       # each repo's own local .env, if it has one
-      optional: true
+    - cp "$WAG_MAIN/.env" .env 2>/dev/null || true   # each repo's own local .env, if it has one
 repos:
   api:
     create:
-      - copy: ~/secrets/api/appsettings.Development.json
-        to: src/Api/appsettings.Development.json
-      - copy: ~/secrets/api/certs      # a whole folder
-        to: certs
+      - cp ~/secrets/api/appsettings.Development.json src/Api/appsettings.Development.json
+      - cp -r ~/secrets/api/certs certs                # a whole folder
+      - echo /.env >> "$(git rev-parse --git-common-dir)/info/exclude"
 ```
 
 Install dependencies, and clean up containers when a worktree goes away:
@@ -141,12 +173,12 @@ Install dependencies, and clean up containers when a worktree goes away:
 repos:
   web:
     create:
-      - run: npm ci
+      - npm ci
   api:
     create:
-      - run: dotnet restore
+      - dotnet restore
     remove:
-      - run: docker compose down
+      - docker compose down
 ```
 
 ## Start profiles
@@ -174,9 +206,9 @@ Without `+name`, the profiles in `autostart` run. `--no-start` runs none.
 ```yaml
 start:
   code:
-    - run: code "$WAG_FEATURE_DIR"     # open the feature folder in VS Code
+    - code "$WAG_FEATURE_DIR"     # open the feature folder in VS Code
   notes:
-    - run: echo "Notes for $WAG_FEATURE" >> ~/notes/features.md
+    - echo "Notes for $WAG_FEATURE" >> ~/notes/features.md
 autostart: [code]
 ```
 
@@ -186,8 +218,9 @@ Examples that open an AI agent and a live git view in tmux are in [tmux.md](tmux
 
 wag itself runs on Windows, Linux and macOS. Two things differ on Windows:
 
-- `run` steps use `cmd.exe`, so use `%WAG_FEATURE%` and Windows commands there. A config written for `sh`,
-  such as the tmux examples, belongs in WSL, Linux or macOS.
+- Steps run in **bash**, which on Windows means Git Bash, so `C:/Program Files/Git/bin` has to be on PATH.
+  A step is written the same way on every platform: `$WAG_FEATURE`, `cp`, `&&`. A config that drives tmux,
+  such as the tmux examples, still belongs in WSL, Linux or macOS, because of tmux rather than the shell.
 - Paths in the config can use `/` or `\`. `~` means `%USERPROFILE%`.
 
 [minimal.yaml](../examples/minimal.yaml) works on every platform.

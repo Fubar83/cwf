@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { parse as parseYaml } from "yaml";
 
@@ -371,7 +371,7 @@ test("creating several repos is all or nothing: a failing hook in the second rep
   const s = setup(`repos:
   web:
     create:
-      - run: node -e "process.exit(4)"
+      - exit 4
 `, ["app", "web"]);
   const r = s.wag("feature-a", "app", "web");
   assert.equal(r.code, 1);
@@ -425,17 +425,17 @@ test("bad usage prints usage and exits 1", () => {
 
 // ───────────────────────── create and remove hooks ─────────────────────────
 
-test("copy hooks bring local files in from your home folder or the main checkout, and keep them out of commits", () => {
+test("hook steps are bash command lines, run in the worktree, with the WAG_* variables", () => {
   const home = mkdtempSync(join(tmpdir(), "wag-home-"));
   writeFileSync(join(home, "appsettings.Local.json"), '{"local":true}\n');
   const s = setup(`hooks:
   create:
-    - copy: '${slash(join(home, "appsettings.Local.json"))}'
-      to: config/appsettings.Local.json
+    - mkdir -p config && cp '${slash(join(home, "appsettings.Local.json"))}' config/appsettings.Local.json
 repos:
   app:
     create:
-      - copy: .env
+      - cp "$WAG_MAIN/.env" .env
+      - echo "$WAG_FEATURE $WAG_REPO $WAG_BRANCH in $(basename "$PWD")" > ran.txt
 `);
   writeFileSync(join(s.main(), ".env"), "SECRET=1\n"); // untracked file in the main checkout
 
@@ -443,27 +443,51 @@ repos:
   assert.equal(r.code, 0, r.err);
   assert.equal(readFileSync(join(r.out, ".env"), "utf8"), "SECRET=1\n");
   assert.equal(readFileSync(join(r.out, "config", "appsettings.Local.json"), "utf8"), '{"local":true}\n');
-  assert.equal(git(r.out, "status", "--porcelain"), "", "copied files must not show up as changes");
+  assert.equal(readFileSync(join(r.out, "ran.txt"), "utf8").trim(), "feature-a app feature-a in app");
+  // Nothing is excluded for you any more: what a hook brings in is simply untracked.
+  assert.match(git(r.out, "status", "--porcelain"), /\?\? \.env/);
 });
 
-test("run hooks get WAG_* variables, and their output never reaches stdout", () => {
+test("a step whose first word is a file next to the config is run as a script, with its arguments", () => {
+  const s = setup(`hooks:
+  create:
+    - setup.sh --verbose "two words"
+`);
+  // No execute bit and no shebang: wag runs it with bash.
+  writeFileSync(join(dirname(s.configFile), "setup.sh"), 'echo "args: $*" > from-script.txt\n');
+  const r = s.wag("feature-a", "app");
+  assert.equal(r.code, 0, r.err);
+  assert.equal(readFileSync(join(r.out, "from-script.txt"), "utf8").trim(), "args: --verbose two words");
+  assert.match(r.err, /script next to config\.yaml/);
+
+  // A name that is not a file next to the config stays an ordinary command.
+  const plain = setup(`hooks:
+  create:
+    - echo plain > from-command.txt
+`);
+  const ok = plain.wag("feature-a", "app");
+  assert.equal(ok.code, 0, ok.err);
+  assert.equal(readFileSync(join(ok.out, "from-command.txt"), "utf8").trim(), "plain");
+  assert.doesNotMatch(ok.err, /script next to/);
+});
+
+test("a hook step's output never reaches stdout", () => {
   const s = setup(`repos:
   app:
     create:
-      - run: node -e "console.log('noise'); require('fs').writeFileSync('ran.txt', process.env.WAG_FEATURE + ' ' + process.env.WAG_REPO + ' ' + process.env.WAG_BRANCH)"
+      - echo noise
 `);
   const r = s.wag("feature-a", "app");
   assert.equal(r.code, 0, r.err);
   assert.equal(r.out, s.wt(), "stdout must be only the path");
   assert.match(r.err, /noise/);
-  assert.equal(readFileSync(join(r.out, "ran.txt"), "utf8"), "feature-a app feature-a");
 });
 
 test("a failing create hook rolls everything back", () => {
   const s = setup(`repos:
   app:
     create:
-      - run: node -e "process.exit(3)"
+      - exit 3
 `);
   const r = s.wag("feature-a", "app");
   assert.equal(r.code, 1);
@@ -472,59 +496,26 @@ test("a failing create hook rolls everything back", () => {
   assert.equal(git(s.main(), "branch", "--list", "feature-a"), "");
 });
 
-test("a missing copy source fails unless it is optional", () => {
-  const missing = setup(`repos:
-  app:
-    create:
-      - copy: .env
+test("a multi-line step is a bash script, and a step may be allowed to fail", () => {
+  const s = setup(`hooks:
+  create:
+    - cp "$WAG_MAIN/.env" .env 2>/dev/null || true
+    - |
+      if [ -f a.txt ]; then echo "found a.txt" > checked.txt
+      else echo missing > checked.txt
+      fi
 `);
-  const r = missing.wag("feature-a", "app");
-  assert.equal(r.code, 1);
-  assert.match(r.err, /does not exist/);
-  assert.equal(existsSync(join(missing.projects, "feature-a")), false);
-
-  const optional = setup(`repos:
-  app:
-    create:
-      - copy: .env
-        optional: true
-`);
-  assert.equal(optional.wag("feature-a", "app").code, 0);
-});
-
-test("copying over an existing file needs overwrite: true", () => {
-  const src = mkdtempSync(join(tmpdir(), "wag-src-"));
-  writeFileSync(join(src, "tracked.json"), '{"local":true}\n');
-  const step = `      - copy: '${slash(join(src, "tracked.json"))}'\n`;
-
-  const refused = setup(`repos:\n  app:\n    create:\n${step}`);
-  const r = refused.wag("feature-a", "app");
-  assert.equal(r.code, 1);
-  assert.match(r.err, /overwrite: true/);
-
-  const allowed = setup(`repos:\n  app:\n    create:\n${step}        overwrite: true\n`);
-  const ok = allowed.wag("feature-a", "app");
-  assert.equal(ok.code, 0, ok.err);
-  assert.equal(readFileSync(join(ok.out, "tracked.json"), "utf8"), '{"local":true}\n');
-});
-
-test("a copy target outside the worktree is refused", () => {
-  const s = setup(`repos:
-  app:
-    create:
-      - copy: a.txt
-        to: ../escape.txt
-`);
-  const r = s.wag("feature-a", "app");
-  assert.equal(r.code, 1);
-  assert.match(r.err, /outside the worktree/);
+  const r = s.wag("feature-a", "app"); // there is no .env in the main checkout
+  assert.equal(r.code, 0, r.err);
+  assert.equal(existsSync(join(r.out, ".env")), false);
+  assert.equal(readFileSync(join(r.out, "checked.txt"), "utf8").trim(), "found a.txt");
 });
 
 test("a failing remove hook stops the removal unless forced", () => {
   const s = setup(`repos:
   app:
     remove:
-      - run: node -e "process.exit(2)"
+      - exit 2
 `);
   const path = s.wag("feature-a", "app").out;
   const refused = s.wag("feature-a", "app", "--rm");
@@ -544,7 +535,7 @@ const RECORD = `node -e "require('fs').writeFileSync(process.env.OUT, [process.e
 test("autostart runs once per call for the whole feature, in the feature folder", () => {
   const s = setup(`start:
   record:
-    - run: ${RECORD}
+    - ${RECORD}
 autostart: [record]
 `, ["app", "web"]);
   const out = join(s.root, "start.txt");
@@ -561,9 +552,9 @@ autostart: [record]
 test("+profile picks start profiles instead of autostart, and --no-start skips them", () => {
   const s = setup(`start:
   record:
-    - run: ${RECORD}
+    - ${RECORD}
   other:
-    - run: node -e "require('fs').writeFileSync(process.env.OUT, 'other')"
+    - node -e "require('fs').writeFileSync(process.env.OUT, 'other')"
 autostart: [record]
 `);
   const out = join(s.root, "start.txt");
@@ -579,7 +570,7 @@ autostart: [record]
 test("an unknown or failing start profile is an error, but the worktree stays", () => {
   const s = setup(`start:
   broken:
-    - run: node -e "process.exit(5)"
+    - exit 5
 `);
   const unknown = s.wag("feature-a", "app", "+nope");
   assert.equal(unknown.code, 1);
@@ -596,8 +587,11 @@ test("an unknown or failing start profile is an error, but the worktree stays", 
 
 test("config errors are reported with their location", () => {
   const cases = [
-    [`repos:\n  app:\n    create:\n      - copy: .env\n        too: x\n`, /repos\.app\.create\[0\]: unknown key "too"/],
-    [`start:\n  tmux:\n    - copy: .env\n`, /start\.tmux\[0\]: needs "run"/],
+    // The old step syntax is gone, and the error says so rather than just "must be a string".
+    [`repos:\n  app:\n    create:\n      - run: npm ci\n`, /repos\.app\.create\[0\]: must be a command, as a string \(a mapping: "run:" and "copy:" are gone/],
+    [`start:\n  tmux:\n    - copy: .env\n`, /start\.tmux\[0\]: must be a command, as a string/],
+    [`hooks:\n  create: npm ci\n`, /hooks\.create: must be a list of commands/],
+    [`hooks:\n  create:\n    - ''\n`, /hooks\.create\[0\]: must be a command, as a string/],
     [`autostart: [tmux]\n`, /autostart: must list start profiles defined under "start"/],
     [`colour: red\n`, /unknown key "colour"/],
   ];
@@ -623,14 +617,14 @@ function validate(text) {
 
 const yamlBlocks = (md) => [...md.matchAll(/```yaml\n([\s\S]*?)```/g)].map((m) => m[1]);
 
-/** Every run script in a parsed config, from hooks, repos and start profiles. */
+/** Every step in a parsed config, from hooks, repos and start profiles. Steps are plain command strings. */
 function runScripts(cfg) {
   const steps = [
     ...(cfg.hooks?.create ?? []), ...(cfg.hooks?.remove ?? []),
     ...Object.values(cfg.repos ?? {}).flatMap((r) => [...(r?.create ?? []), ...(r?.remove ?? [])]),
     ...Object.values(cfg.start ?? {}).flat(),
   ];
-  return steps.filter((s) => s.run).map((s) => s.run.replace(/\r/g, "").trimEnd());
+  return steps.filter((s) => typeof s === "string").map((s) => s.replace(/\r/g, "").trimEnd());
 }
 
 test("every example config is valid", () => {
