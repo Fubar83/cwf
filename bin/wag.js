@@ -9,8 +9,8 @@
 //   wag <feature> [<repo>...] --rm       remove the feature's worktrees (all of them if no repo is given)
 //
 // Rules:
-//   - Main checkouts live in "projects" and feature folders in "features", which defaults to "projects"
-//     itself. A relative "features" is a folder under projects; an absolute one is anywhere you like.
+//   - Main checkouts live in "projects". Feature folders go there too, or in a folder inside it that the
+//     "features" setting names, like "_features". It is always inside projects, never anywhere else.
 //   - A feature may be a path, like feature/tjosan-1. The branch is that whole name and the feature folder
 //     nests to match it; the worktrees inside are named after the last segment (api-tjosan-1). A trailing
 //     slash on any argument is dropped, so tab-completed folder names work: wag feature/testA repo1/ repo2/
@@ -83,6 +83,19 @@ function configFile() {
   if (process.env.WAG_CONFIG) return process.env.WAG_CONFIG;
   const base = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
   return join(base, "wag", "config.yaml");
+}
+
+/**
+ * Where feature folders go: the projects folder, or a folder inside it that "features" names, like
+ * "_features". Nothing else, so one setting cannot send worktrees off to an unrelated part of the disk.
+ */
+function featuresDir(projects, value) {
+  if (!value) return projects;
+  const dir = resolve(projects, value);
+  if (isAbsolute(value) || value.startsWith("~") || !inside(projects, dir)) {
+    fail(`config features: must be a folder inside projects, like "_features" (got "${value}")`);
+  }
+  return dir;
 }
 
 function onlyKeys(obj, allowed, at) {
@@ -170,11 +183,8 @@ function loadConfig(file = configFile()) {
       };
     }
   }
-  // "features" is where feature folders go. A relative path is a folder under projects, so "work/features"
-  // means projects/work/features; an absolute path or a ~ one puts them wherever you like. Left out, feature
-  // folders sit next to the main checkouts in projects, which is what wag has always done.
   const projects = resolve(expandHome(raw.projects ?? "~/projects"));
-  const features = raw.features ? resolve(projects, expandHome(raw.features)) : projects;
+  const features = featuresDir(projects, raw.features);
   return {
     file,
     projects,

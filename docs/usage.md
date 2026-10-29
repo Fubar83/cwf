@@ -18,8 +18,8 @@ the feature's name. Your main checkouts are left alone, so you can work on sever
   Creating a worktree puts a main checkout that sits on another branch back on origin's default branch,
   as long as it is clean; one with uncommitted changes is left alone, with a note.
 - **The feature folder** is `projects/<feature>`. It only holds worktrees. A feature whose name is a path,
-  like `feature/tjosan-1`, nests to match it: `projects/feature/tjosan-1`. Set `features` in the config to
-  put feature folders somewhere else than next to the main checkouts ([configuration](configuration.md#features)).
+  like `feature/tjosan-1`, nests to match it: `projects/feature/tjosan-1`. Set `features` in the config to collect feature
+  folders in a folder of their own inside `projects` ([configuration](configuration.md#features)).
 - **Each worktree** is `projects/<feature>/<repo>-<feature>`, made with `git worktree`. Nothing is copied:
   git shares the repository between the main checkout and its worktrees. For a nested feature the folder is
   named after the last segment only, so `feature/tjosan-1` gives `api-tjosan-1`, not `api-feature-tjosan-1`.

@@ -17,7 +17,7 @@ Ready-made files are in [examples/](../examples): `minimal.yaml`, `config.yaml`,
 
 ```yaml
 projects: ~/projects          # where the main checkouts are
-features: _features           # where the feature folders go; default: in projects
+features: _features           # a folder inside projects for them; default: in projects itself
 
 hooks:                        # for every repo
   create: []                  # after a worktree is made
@@ -48,22 +48,30 @@ for a main checkout that lives somewhere else; its worktrees still go in the fea
 
 ## features
 
-Where feature folders go. Left out, they go in `projects`, next to the main checkouts, which is what wag
-has always done. Set it to keep the two apart:
+A folder inside `projects` for the feature folders, so your main checkouts and your features are not mixed
+together. Left out, features go in `projects` itself, next to the main checkouts, which is what wag has
+always done.
 
 ```yaml
 projects: ~/projects
-features: _features           # a folder under projects: ~/projects/_features/<feature>
+features: _features
 ```
 
-```yaml
-projects: ~/projects
-features: ~/work/features     # anywhere you like: ~/work/features/<feature>
+```text
+~/projects/api/                                 main checkout
+~/projects/web/                                 main checkout
+~/projects/_features/feature/login/api-login/   worktree, branch feature/login
+~/projects/_features/feature/login/web-login/   worktree, branch feature/login
 ```
 
-A relative path is a folder under `projects`; an absolute path (or one starting with `~`) is used as it is.
-Either way a feature keeps its own folder inside, with one worktree per repo:
-`<features>/<feature>/<repo>-<feature>`.
+A feature keeps its own folder inside, with one worktree per repo:
+`<features>/<feature>/<repo>-<feature>`. Any name works, and so does a deeper one such as
+`work/features`, as long as it stays inside `projects`: an absolute path, one starting with `~`, and
+anything climbing out with `..` are all config errors, so one setting can never send worktrees off to an
+unrelated part of the disk.
+
+`repos.<name>.path` is the setting for a main checkout that lives elsewhere; it moves that checkout only,
+and its worktrees still go under `features` with all the others.
 
 The folder is created when the first worktree is, so `wag` simply says there are no features until then.
 wag only ever looks for features where `features` points, so moving it leaves existing feature folders

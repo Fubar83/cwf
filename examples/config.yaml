@@ -8,7 +8,7 @@
 #   ~/projects/repo1                       main checkout
 #   ~/projects/feature-a/repo1-feature-a   worktree on branch feature-a
 projects: ~/projects
-# features: _features    # uncomment to keep feature folders out of the projects folder
+# features: _features    # uncomment to collect feature folders in ~/projects/_features instead
 
 # Hooks for every repo. Global steps run first, then the repo's own.
 # create: after a worktree is made. If a step fails, the whole create is rolled back.
