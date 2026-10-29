@@ -1,6 +1,6 @@
 {
   "name": "@fub4r/wag",
-  "version": "0.6.1",
+  "version": "0.6.0",
   "description": "Worktrees, Agents, Git: one command gives a feature a git worktree per repo, on a same-named branch, with hooks and start profiles",
   "keywords": [
     "git",
