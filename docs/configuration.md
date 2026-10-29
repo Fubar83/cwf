@@ -104,9 +104,9 @@ goes to stderr, so it never mixes with that path. A step that exits non-zero fai
 whole call back, a remove hook stops the removal. Use `|| true` for something allowed to fail, as above for
 a `.env` that may not exist.
 
-bash has to be on PATH. It is there already on Linux and macOS; on Windows it is Git Bash, which comes with
-git, so `C:/Program Files/Git/bin` needs to be on PATH. One shell everywhere means one way to write a step —
-`$WAG_REPO`, not `%WAG_REPO%` — and a multi-line step is an ordinary bash script:
+The bash is the system one on Linux and macOS, and Git Bash on Windows, which wag finds for you (see
+[Windows](#windows)). One shell everywhere means one way to write a step — `$WAG_REPO`, not `%WAG_REPO%` —
+and a multi-line step is an ordinary bash script:
 
 ```yaml
 hooks:
@@ -218,7 +218,16 @@ Examples that open an AI agent and a live git view in tmux are in [tmux.md](tmux
 
 wag itself runs on Windows, Linux and macOS. Two things differ on Windows:
 
-- Steps run in **bash**, which on Windows means Git Bash, so `C:/Program Files/Git/bin` has to be on PATH.
+- Steps run in **bash**, which on Windows means **Git Bash**. wag finds it next to the `git` it already needs,
+  so there is nothing to put on PATH: Git for Windows keeps `bash.exe` in `bin`, beside the folders that
+  `git --exec-path` points into.
+
+  wag deliberately does **not** use whatever `bash` is on PATH there. On a default Windows install that name
+  is `%LOCALAPPDATA%\Microsoft\WindowsApps\bash.exe`, the launcher for the Windows Subsystem for Linux. That
+  is a Linux bash: `C:/Users/you/...` does not exist inside it and Windows programs are not on its PATH, so a
+  step that copies a file or runs `node` fails with a puzzling `No such file or directory`. Set `WAG_BASH` to
+  a `bash.exe` to choose a different one on purpose (MSYS2, Cygwin, or indeed a WSL bash).
+
   A step is written the same way on every platform: `$WAG_FEATURE`, `cp`, `&&`. A config that drives tmux,
   such as the tmux examples, still belongs in WSL, Linux or macOS, because of tmux rather than the shell.
 - Paths in the config can use `/` or `\`. `~` means `%USERPROFILE%`.

@@ -339,6 +339,42 @@ function switchMainToDefault(repo, main) {
 const toPosix = (p) => p.split(sep).join("/");
 const shQuote = (s) => `'${s.replaceAll("'", `'\\''`)}'`;
 
+// Windows ships this as an app alias for the Windows Subsystem for Linux. It is a Linux bash: a Windows
+// path means nothing in it (C:/… does not exist, node is not on its PATH), so it can never run a step.
+const WSL_LAUNCHER = /[\\/](WindowsApps|System32)[\\/]bash\.exe$/i;
+
+/**
+ * The bash that steps run with, worked out once. On Windows "bash" on PATH is usually the WSL launcher
+ * above, so Git's own bash is looked for first, next to the git wag already needs: Git for Windows keeps
+ * it in bin/bash.exe beside the folders git --exec-path points into. $WAG_BASH overrides all of it.
+ */
+let bashExe;
+function bash() {
+  if (bashExe) return bashExe;
+  if (process.env.WAG_BASH) return (bashExe = process.env.WAG_BASH);
+  if (process.platform !== "win32") return (bashExe = "bash");
+  for (let dir = gitOut(homedir(), "--exec-path"); dir && dir !== dirname(dir); dir = dirname(dir)) {
+    for (const rel of [["bin", "bash.exe"], ["usr", "bin", "bash.exe"]]) {
+      if (existsSync(join(dir, ...rel))) return (bashExe = join(dir, ...rel));
+    }
+  }
+  const onPath = gitOut(homedir(), "--version") && firstOnPath("bash");
+  if (onPath && !WSL_LAUNCHER.test(onPath)) return (bashExe = onPath);
+  fail(
+    `no bash to run steps with.${onPath ? ` The "bash" on PATH is ${onPath}, the Windows Subsystem for Linux launcher, which cannot see Windows paths.` : ""}` +
+      ` wag looks for Git's own bash next to git: install Git for Windows, or point WAG_BASH at a bash.exe.`,
+  );
+}
+
+/** The first match for a command on PATH, "" when there is none. */
+function firstOnPath(cmd) {
+  try {
+    return execFileSync("where", [cmd], { encoding: "utf8" }).split(/\r?\n/).find((l) => l.trim())?.trim() ?? "";
+  } catch {
+    return "";
+  }
+}
+
 /** The script a step names, when its first word is a file next to the config file, else "". */
 function scriptOf(cfg, command) {
   if (command.includes("\n")) return ""; // a block is written inline, not a file name
@@ -360,10 +396,8 @@ function runCommand(cfg, command, cwd, env) {
   info(`  $ ${line}${script ? `   (script next to ${basename(cfg.file)})` : ""}`);
   const first = command.trim().split(/\s+/)[0];
   const run = script ? `bash ${shQuote(toPosix(script))}${command.trim().slice(first.length)}` : command;
-  const r = spawnSync("bash", ["-c", run], { cwd, stdio: ["inherit", 2, 2], env: { ...process.env, ...env } });
-  if (r.error) {
-    fail(`"${line}" could not start: ${r.error.message}. wag runs steps with bash, so bash has to be on PATH (Git Bash on Windows).`);
-  }
+  const r = spawnSync(bash(), ["-c", run], { cwd, stdio: ["inherit", 2, 2], env: { ...process.env, ...env } });
+  if (r.error) fail(`"${line}" could not start with ${bash()}: ${r.error.message}`);
   if (r.status !== 0) fail(`"${line}" failed with exit code ${r.status}`);
 }
 

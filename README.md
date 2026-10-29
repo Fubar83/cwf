@@ -25,6 +25,10 @@ wag feature-a --rm             # remove the feature's worktrees (branches are ke
 - **git 2.17 or later** (2.37 for a plain first `git push`), able to fetch from your repos' `origin` remotes
   (SSH keys or a credential helper, whatever you already use). wag runs `git fetch`; pushing is up to you.
 - **Node.js 22 or later**, because wag is a Node script.
+- **bash**, but only if you configure hooks or start profiles, because that is what their steps run in. On
+  Windows it is the Git Bash that comes with git, which wag finds next to git — not the `bash` on PATH, which
+  is usually the Windows Subsystem for Linux launcher
+  ([why](docs/configuration.md#windows)).
 
 That is all. wag's only package dependency, `yaml`, is installed with it. Anything else, such as tmux, lazygit
 or an AI agent CLI, is only needed if your own config starts it.

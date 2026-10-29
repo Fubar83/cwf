@@ -496,6 +496,26 @@ test("a failing create hook rolls everything back", () => {
   assert.equal(git(s.main(), "branch", "--list", "feature-a"), "");
 });
 
+test("steps run with a bash that sees ordinary paths, and WAG_BASH picks which one", () => {
+  const s = setup(`hooks:
+  create:
+    - test -f "$WAG_MAIN/a.txt" && echo saw-it > proof.txt
+`);
+  // The point of this on Windows: "bash" on PATH is usually the WSL launcher, where a path like
+  // C:/Users/... does not exist, so a step reaching into the main checkout has to fail there.
+  const r = s.wag("feature-a", "app");
+  assert.equal(r.code, 0, r.err);
+  assert.equal(readFileSync(join(r.out, "proof.txt"), "utf8").trim(), "saw-it");
+
+  // WAG_BASH overrides the search, and a bad one is reported as what it is.
+  const bogus = spawnSync(process.execPath, [WAG, "feature-b", "app"], {
+    env: { ...process.env, WAG_CONFIG: s.configFile, WAG_BASH: join(s.root, "no-such-bash") },
+    encoding: "utf8",
+  });
+  assert.equal(bogus.status, 1);
+  assert.match(bogus.stderr, /could not start with .*no-such-bash/);
+});
+
 test("a multi-line step is a bash script, and a step may be allowed to fail", () => {
   const s = setup(`hooks:
   create:
@@ -682,7 +702,21 @@ function commitIn(path, file, content, message) {
 
 // ───────────────────────── git view example ─────────────────────────
 
-const hasSh = spawnSync("sh", ["-c", "exit 0"]).status === 0;
+/**
+ * A shell for the example scripts: the system one, or Git's bash on Windows, where "sh" is usually absent
+ * and "bash" on PATH is the WSL launcher. Same place wag looks, so this runs outside Git Bash too.
+ */
+const SH = (() => {
+  if (spawnSync("sh", ["-c", "exit 0"]).status === 0) return "sh";
+  if (process.platform !== "win32") return "";
+  for (let d = execFileSync("git", ["--exec-path"], { encoding: "utf8" }).trim(); d && d !== dirname(d); d = dirname(d)) {
+    for (const rel of [["bin", "bash.exe"], ["usr", "bin", "bash.exe"]]) {
+      if (existsSync(join(d, ...rel))) return join(d, ...rel);
+    }
+  }
+  return "";
+})();
+const hasSh = SH !== "";
 
 test("examples/git-view.sh shows branch, files and commits of a worktree", { skip: !hasSh && "no sh on PATH" }, () => {
   const s = setup();
@@ -693,7 +727,7 @@ test("examples/git-view.sh shows branch, files and commits of a worktree", { ski
   writeFileSync(join(path, "a.txt"), "changed\n");
 
   const view = join(ROOT, "examples", "git-view.sh");
-  const r = spawnSync("sh", [view, "--once", path], { encoding: "utf8" });
+  const r = spawnSync(SH, [view, "--once", path], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   const out = r.stdout.replace(/\x1b\[[0-9;]*m/g, "");
   assert.match(out, /## feature-a.*\(not pushed yet\)/);
@@ -703,7 +737,7 @@ test("examples/git-view.sh shows branch, files and commits of a worktree", { ski
   assert.match(out, /not staged: 1 file changed/);
   assert.match(out, /Add CSV export/);
 
-  const feature = spawnSync("sh", [view, "--once", join(s.projects, "feature-a")], { encoding: "utf8" });
+  const feature = spawnSync(SH, [view, "--once", join(s.projects, "feature-a")], { encoding: "utf8" });
   assert.match(feature.stdout.replace(/\x1b\[[0-9;]*m/g, ""), /^app$/m);
 });
 
