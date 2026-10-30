@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -423,14 +423,15 @@ test("bad usage prints usage and exits 1", () => {
   assert.equal(s.wag("--nope").code, 1);
 });
 
-// ───────────────────────── create and remove hooks ─────────────────────────
+// ───────────────────────── repo hooks ─────────────────────────
 
 test("hook steps are bash command lines, run in the worktree, with the WAG_* variables", () => {
   const home = mkdtempSync(join(tmpdir(), "wag-home-"));
   writeFileSync(join(home, "appsettings.Local.json"), '{"local":true}\n');
   const s = setup(`hooks:
-  create:
-    - mkdir -p config && cp '${slash(join(home, "appsettings.Local.json"))}' config/appsettings.Local.json
+  repo:
+    create:
+      - mkdir -p config && cp '${slash(join(home, "appsettings.Local.json"))}' config/appsettings.Local.json
 repos:
   app:
     create:
@@ -450,8 +451,9 @@ repos:
 
 test("a step whose first word is a file next to the config is run as a script, with its arguments", () => {
   const s = setup(`hooks:
-  create:
-    - setup.sh --verbose "two words"
+  repo:
+    create:
+      - setup.sh --verbose "two words"
 `);
   // No execute bit and no shebang: wag runs it with bash.
   writeFileSync(join(dirname(s.configFile), "setup.sh"), 'echo "args: $*" > from-script.txt\n');
@@ -462,8 +464,9 @@ test("a step whose first word is a file next to the config is run as a script, w
 
   // A name that is not a file next to the config stays an ordinary command.
   const plain = setup(`hooks:
-  create:
-    - echo plain > from-command.txt
+  repo:
+    create:
+      - echo plain > from-command.txt
 `);
   const ok = plain.wag("feature-a", "app");
   assert.equal(ok.code, 0, ok.err);
@@ -498,8 +501,9 @@ test("a failing create hook rolls everything back", () => {
 
 test("steps run with a bash that sees ordinary paths, and WAG_BASH picks which one", () => {
   const s = setup(`hooks:
-  create:
-    - test -f "$WAG_MAIN/a.txt" && echo saw-it > proof.txt
+  repo:
+    create:
+      - test -f "$WAG_MAIN/a.txt" && echo saw-it > proof.txt
 `);
   // The point of this on Windows: "bash" on PATH is usually the WSL launcher, where a path like
   // C:/Users/... does not exist, so a step reaching into the main checkout has to fail there.
@@ -518,12 +522,13 @@ test("steps run with a bash that sees ordinary paths, and WAG_BASH picks which o
 
 test("a multi-line step is a bash script, and a step may be allowed to fail", () => {
   const s = setup(`hooks:
-  create:
-    - cp "$WAG_MAIN/.env" .env 2>/dev/null || true
-    - |
-      if [ -f a.txt ]; then echo "found a.txt" > checked.txt
-      else echo missing > checked.txt
-      fi
+  repo:
+    create:
+      - cp "$WAG_MAIN/.env" .env 2>/dev/null || true
+      - |
+        if [ -f a.txt ]; then echo "found a.txt" > checked.txt
+        else echo missing > checked.txt
+        fi
 `);
   const r = s.wag("feature-a", "app"); // there is no .env in the main checkout
   assert.equal(r.code, 0, r.err);
@@ -546,6 +551,106 @@ test("a failing remove hook stops the removal unless forced", () => {
   const forced = s.wag("feature-a", "app", "--rm", "--force");
   assert.equal(forced.code, 0, forced.err);
   assert.equal(existsSync(path), false);
+});
+
+// ───────────────────────── feature hooks ─────────────────────────
+
+// The worktrees are counted with grep, not `wc -w`: BSD wc pads its number with spaces and GNU wc does not,
+// so the same step would print different things on macOS and on Linux.
+test("feature create hooks run once, in the feature folder, after every repo's own", () => {
+  const s = setup(`hooks:
+  repo:
+    create:
+      - echo "repo $WAG_REPO" >> ../order.txt
+  feature:
+    create:
+      - echo "feature $WAG_FEATURE in $(basename "$PWD") with $(echo $WAG_REPOS) and $(printf '%s\\n' "$WAG_WORKTREES" | grep -c .) worktrees" >> order.txt
+`, ["app", "web", "docs"]);
+  const order = join(s.projects, "feature-a", "order.txt");
+
+  const r = s.wag("feature-a", "app", "web");
+  assert.equal(r.code, 0, r.err);
+  assert.equal(readFileSync(order, "utf8").trim().split(/\r?\n/).join("|"),
+    "repo app|repo web|feature feature-a in feature-a with app web and 2 worktrees");
+  assert.match(r.err, /feature create hooks for feature-a:/);
+  assert.equal(existsSync(join(s.projects, "feature-a", "app", "order.txt")), false, "runs in the feature folder");
+
+  // Opening the feature again creates nothing, so neither level of hooks runs again.
+  assert.equal(s.wag("feature-a", "app", "web").code, 0);
+  assert.equal(readFileSync(order, "utf8").trim().split(/\r?\n/).length, 3);
+
+  // Adding a repo is that repo appearing, not the feature: its own hooks run, the feature's do not.
+  assert.equal(s.wag("feature-a", "docs").code, 0);
+  const lines = readFileSync(order, "utf8").trim().split(/\r?\n/);
+  assert.deepEqual(lines.slice(3), ["repo docs"]);
+});
+
+test("feature remove hooks run once, before the last worktree goes", () => {
+  const s = setup(`hooks:
+  feature:
+    remove:
+      - echo "$(echo $WAG_REPOS) with $(ls) repo=\${WAG_REPO-unset}" >> ../removed.txt
+`, ["app", "web"]);
+  const removed = join(s.projects, "removed.txt");
+  s.wag("feature-a", "app", "web");
+
+  // One repo of two is not the feature going away.
+  assert.equal(s.wag("feature-a", "web", "--rm").code, 0);
+  assert.equal(existsSync(removed), false);
+
+  // The rest of it is, and the hook still sees the worktrees. WAG_REPO is never set at this level, not even
+  // here, where the feature is down to one repo: the repos are a list, however many of them there are.
+  assert.equal(s.wag("feature-a", "--rm").code, 0);
+  assert.equal(readFileSync(removed, "utf8").trim(), "app with app repo=unset");
+  assert.equal(existsSync(join(s.projects, "feature-a")), false);
+});
+
+test("a failing feature create hook rolls every worktree back and says what it left", () => {
+  const s = setup(`hooks:
+  feature:
+    create:
+      - echo note > NOTES.md
+      - exit 4
+`, ["app", "web"]);
+  const r = s.wag("feature-a", "app", "web");
+  assert.equal(r.code, 1);
+  assert.match(r.err, /exit code 4/);
+  assert.match(r.err, /Rolled back 2 worktree\(s\)/);
+  for (const repo of ["app", "web"]) {
+    assert.equal(existsSync(join(s.projects, "feature-a", repo)), false);
+    assert.equal(git(s.main(repo), "branch", "--list", "feature-a"), "");
+  }
+  // The folder is kept, because the hook had already written something into it.
+  assert.equal(readFileSync(join(s.projects, "feature-a", "NOTES.md"), "utf8").trim(), "note");
+  assert.match(r.err, /still holds files a hook made/);
+});
+
+test("examples/jira-notes.sh writes notes for a branch that ends in a Jira key", () => {
+  const s = setup(`hooks:
+  feature:
+    create:
+      - jira-notes.sh https://jira.example.com/
+`, ["app", "web"]);
+  copyFileSync(join(import.meta.dirname, "..", "examples", "jira-notes.sh"), join(dirname(s.configFile), "jira-notes.sh"));
+
+  const r = s.wag("feature/vfs-1234", "app", "web");
+  assert.equal(r.code, 0, r.err);
+  const notes = readFileSync(join(s.projects, "feature-vfs-1234", "NOTES.md"), "utf8");
+  assert.match(notes, /^# VFS-1234$/m);
+  assert.match(notes, /https:\/\/jira\.example\.com\/browse\/VFS-1234/);
+  assert.match(notes, /feature\/vfs-1234/);
+  assert.match(notes, /app web/);
+
+  // Notes already written in are never overwritten.
+  writeFileSync(join(s.projects, "feature-vfs-1234", "NOTES.md"), "mine\n");
+  assert.equal(s.wag("feature/vfs-1234", "--rm").code, 0);
+  assert.equal(s.wag("feature/vfs-1234", "app").code, 0);
+  assert.equal(readFileSync(join(s.projects, "feature-vfs-1234", "NOTES.md"), "utf8"), "mine\n");
+
+  // A branch with no key at the end is fine: no notes, and the worktree stays.
+  const plain = s.wag("release-x", "app");
+  assert.equal(plain.code, 0, plain.err);
+  assert.equal(existsSync(join(s.projects, "release-x", "NOTES.md")), false);
 });
 
 // ───────────────────────── start profiles ─────────────────────────
@@ -610,8 +715,11 @@ test("config errors are reported with their location", () => {
     // The old step syntax is gone, and the error says so rather than just "must be a string".
     [`repos:\n  app:\n    create:\n      - run: npm ci\n`, /repos\.app\.create\[0\]: must be a command, as a string \(a mapping: "run:" and "copy:" are gone/],
     [`start:\n  tmux:\n    - copy: .env\n`, /start\.tmux\[0\]: must be a command, as a string/],
-    [`hooks:\n  create: npm ci\n`, /hooks\.create: must be a list of commands/],
-    [`hooks:\n  create:\n    - ''\n`, /hooks\.create\[0\]: must be a command, as a string/],
+    [`hooks:\n  repo:\n    create: npm ci\n`, /hooks\.repo\.create: must be a list of commands/],
+    [`hooks:\n  feature:\n    create:\n      - ''\n`, /hooks\.feature\.create\[0\]: must be a command, as a string/],
+    // Steps used to sit straight under hooks, where they meant every repo. The error says where they go now.
+    [`hooks:\n  create:\n    - npm ci\n`, /hooks\.create: hooks now name their level.*hooks\.repo\.create \(for every repo\)/],
+    [`hooks:\n  worktree:\n    create:\n      - npm ci\n`, /hooks: unknown key "worktree" \(allowed: repo, feature\)/],
     [`autostart: [tmux]\n`, /autostart: must list start profiles defined under "start"/],
     [`colour: red\n`, /unknown key "colour"/],
   ];
@@ -640,7 +748,8 @@ const yamlBlocks = (md) => [...md.matchAll(/```yaml\n([\s\S]*?)```/g)].map((m) =
 /** Every step in a parsed config, from hooks, repos and start profiles. Steps are plain command strings. */
 function runScripts(cfg) {
   const steps = [
-    ...(cfg.hooks?.create ?? []), ...(cfg.hooks?.remove ?? []),
+    ...(cfg.hooks?.repo?.create ?? []), ...(cfg.hooks?.repo?.remove ?? []),
+    ...(cfg.hooks?.feature?.create ?? []), ...(cfg.hooks?.feature?.remove ?? []),
     ...Object.values(cfg.repos ?? {}).flatMap((r) => [...(r?.create ?? []), ...(r?.remove ?? [])]),
     ...Object.values(cfg.start ?? {}).flat(),
   ];

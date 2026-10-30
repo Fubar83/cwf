@@ -56,5 +56,8 @@ are ordinary files in that repo, shared through git like any other.
 - **Hooks set a worktree up** the way you would by hand: `.env` files, local settings, dependencies. Add what
   a hook brings in to the repo's `.gitignore` or its local exclude list if an agent's `git add -A` must not
   commit it — wag does not exclude anything for you.
+- **Feature hooks set the feature up,** once, in the folder above the worktrees: the ticket the branch names,
+  a brief for the agent, a note it can append to. It sits outside every repo, so it is in no `git status` and
+  no agent will commit it ([hooks](configuration.md#hooks)).
 - **Main checkouts stay untouched,** and every feature has its own worktrees, so you can run another agent on
   another feature at the same time.

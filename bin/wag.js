@@ -21,6 +21,9 @@
 //     clean. That also frees the feature's branch when the main checkout is the thing holding it.
 //   - A hook or start step is one bash command line, written as a plain string. A step whose first word is a
 //     file next to the config file is run as that script with bash, arguments and all.
+//   - Hooks say which level they are on: hooks.repo (and the same create/remove keys under repos.<name>) runs
+//     for one worktree at a time, in it, while hooks.feature runs once for the whole feature, in the feature
+//     folder, when the feature itself appears and before it goes away.
 //   - Nothing is guessed. A missing origin, a failed fetch, an invalid name, a branch checked out elsewhere,
 //     a local branch that diverged from origin, or a bad config all stop with an error.
 //   - Creating is all or nothing: if one repo (or one of its create hooks) fails, every worktree and branch
@@ -122,11 +125,29 @@ function parseSteps(list, at) {
   });
 }
 
-function parseHooks(h, at) {
+/** The create and remove steps of one hook block. */
+function parseEvents(h, at) {
   if (h == null) return { create: [], remove: [] };
   if (!isObject(h)) fail(`config ${at}: must be a mapping`);
   onlyKeys(h, ["create", "remove"], at);
   return { create: parseSteps(h.create, `${at}.create`), remove: parseSteps(h.remove, `${at}.remove`) };
+}
+
+/**
+ * Two levels, each with its own create and remove: "repo" for every repo of the feature, one worktree at a
+ * time, and "feature" for the whole feature, once. The steps used to sit directly under hooks, where they were
+ * the per-repo ones, so that spelling is an error that names both levels rather than just an unknown key.
+ */
+function parseHooks(h, at) {
+  if (h == null) return { repo: parseEvents(null, at), feature: parseEvents(null, at) };
+  if (!isObject(h)) fail(`config ${at}: must be a mapping`);
+  for (const event of ["create", "remove"]) {
+    if (h[event] !== undefined) {
+      fail(`config ${at}.${event}: hooks now name their level, so move these steps to ${at}.repo.${event} (for every repo) or ${at}.feature.${event} (once for the whole feature)`);
+    }
+  }
+  onlyKeys(h, ["repo", "feature"], at);
+  return { repo: parseEvents(h.repo, `${at}.repo`), feature: parseEvents(h.feature, `${at}.feature`) };
 }
 
 /** Loads and validates the config. No file means defaults: ~/projects, no hooks, no start profiles. */
@@ -401,13 +422,37 @@ function runCommand(cfg, command, cwd, env) {
   if (r.status !== 0) fail(`"${line}" failed with exit code ${r.status}`);
 }
 
-/** Create and remove hooks for one worktree: global steps first, then the repo's own. */
-function runHooks(cfg, event, ctx) {
-  const steps = [...cfg.hooks[event], ...(cfg.repos[ctx.repo]?.[event] ?? [])];
+/** Repo hooks run for one worktree, in it: the steps for every repo first, then that repo's own. */
+function runRepoHooks(cfg, event, ctx) {
+  const steps = [...cfg.hooks.repo[event], ...(cfg.repos[ctx.repo]?.[event] ?? [])];
   if (!steps.length) return;
-  info(`${event} hooks for ${folderOf(ctx.feature)}/${ctx.repo}:`);
+  info(`repo ${event} hooks for ${folderOf(ctx.feature)}/${ctx.repo}:`);
   const env = { WAG_FEATURE: ctx.feature, WAG_BRANCH: ctx.feature, WAG_REPO: ctx.repo, WAG_WORKTREE: ctx.wt, WAG_MAIN: ctx.main };
   for (const step of steps) runCommand(cfg, step, ctx.wt, env);
+}
+
+/**
+ * Feature hooks run once for the whole feature, in the feature folder, with every repo of it in WAG_REPOS:
+ * create once the feature's worktrees are all there and their own create hooks have run, remove before the
+ * last of them is taken away. Adding a repo to a feature that already exists is not the feature appearing,
+ * and removing one repo of several is not it going away, so neither runs then.
+ * There is no WAG_REPO or WAG_WORKTREE here, not even for a feature with one repo: a step that reaches for
+ * one would work on such a feature and then quietly do nothing on the next, which has two. Repo hooks are
+ * where a single repo is the subject; here the repos are a list.
+ */
+function runFeatureHooks(cfg, event, { feature, repos, worktrees }) {
+  const steps = cfg.hooks.feature[event];
+  if (!steps.length) return;
+  const dir = featureDir(cfg, feature);
+  info(`feature ${event} hooks for ${folderOf(feature)}:`);
+  const env = {
+    WAG_FEATURE: feature,
+    WAG_BRANCH: feature,
+    WAG_FEATURE_DIR: dir,
+    WAG_REPOS: repos.join("\n"),
+    WAG_WORKTREES: worktrees.join("\n"),
+  };
+  for (const step of steps) runCommand(cfg, step, dir, env);
 }
 
 /**
@@ -483,7 +528,7 @@ function createOne(cfg, feature, p) {
     if (p.fastForward) git(p.wt, "merge", "--ff-only", remoteRef(feature));
     pushSameName(p.main);
     syncUpstream(p.main, feature);
-    runHooks(cfg, "create", { feature, repo: p.repo, wt: p.wt, main: p.main });
+    runRepoHooks(cfg, "create", { feature, repo: p.repo, wt: p.wt, main: p.main });
   } catch (e) {
     undo();
     throw e;
@@ -517,7 +562,8 @@ function createAll(cfg, feature, repos) {
   }
   if (existsSync(join(fdir, ".git"))) fail(`${fdir} is a repository; pick a feature name that is not a repo name`);
   // Slashes become dashes, so feature/abc123 and feature-abc123 want the same folder. Whoever is in it keeps it.
-  const taken = reposIn(cfg, feature).map((r) => branchIn(worktreeOf(cfg, feature, r))).find((b) => b && b !== feature);
+  const existing = reposIn(cfg, feature);
+  const taken = existing.map((r) => branchIn(worktreeOf(cfg, feature, r))).find((b) => b && b !== feature);
   if (taken) fail(`${fdir} already holds ${taken}, which uses the same folder name as ${feature}. Pick another name.`);
   for (const repo of repos.filter((r) => hasWorktree(cfg, feature, r))) repair(cfg, feature, repo);
   const missing = repos.filter((r) => !hasWorktree(cfg, feature, r));
@@ -529,10 +575,17 @@ function createAll(cfg, feature, repos) {
   const undos = [];
   try {
     for (const p of prepared) undos.push(createOne(cfg, feature, p));
+    // The feature itself is new when it had no worktrees at all, and its hooks see every one of them.
+    if (!existing.length) {
+      const all = reposIn(cfg, feature);
+      runFeatureHooks(cfg, "create", { feature, repos: all, worktrees: all.map((r) => worktreeOf(cfg, feature, r)) });
+    }
   } catch (e) {
     for (const undo of undos.reverse()) undo();
     if (!fdirExisted) pruneFeatureDir(cfg, feature);
     if (undos.length) info(`Rolled back ${undos.length} worktree(s) created by this call.`);
+    // A feature hook may have written something before it failed, and pruning only takes an empty folder.
+    if (!fdirExisted && isDir(fdir)) info(`${fdir} was left behind: it still holds files a hook made.`);
     throw e;
   }
 }
@@ -549,19 +602,26 @@ function removeAll(cfg, feature, repos, force) {
     const dirty = targets.filter((t) => git(t.wt, "status", "--porcelain").length > 0).map((t) => t.wt);
     if (dirty.length) fail(`uncommitted changes in:\n  ${dirty.join("\n  ")}\nCommit them, or add --force to discard them. Nothing was removed.`);
   }
-  for (const t of targets) {
+  const hook = (run) => {
     try {
-      runHooks(cfg, "remove", { feature, ...t });
+      run();
     } catch (e) {
       if (!force) throw new WagError(`${e.message}\nNothing was removed. Fix the hook, or add --force to remove anyway.`);
       info(`Ignoring the failing hook because of --force: ${e.message}`);
     }
+  };
+  // The whole feature is going when nothing of it is left behind; its hooks run first, while everything is there.
+  if (reposIn(cfg, feature).every((r) => repos.includes(r))) {
+    hook(() => runFeatureHooks(cfg, "remove", { feature, repos: targets.map((t) => t.repo), worktrees: targets.map((t) => t.wt) }));
   }
+  for (const t of targets) hook(() => runRepoHooks(cfg, "remove", { feature, ...t }));
   for (const t of targets) {
     git(t.main, "worktree", "remove", ...(force ? ["--force"] : []), t.wt);
     info(`Removed ${t.wt}. Branch ${feature} in ${t.repo} was kept.`);
   }
   pruneFeatureDir(cfg, feature);
+  const fdir = featureDir(cfg, feature);
+  if (isDir(fdir)) info(`${fdir} was kept: it still holds files that are not worktrees.`);
 }
 
 /** Worktrees of one feature, or of all features when feature is undefined. */

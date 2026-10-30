@@ -11,18 +11,19 @@
 projects: ~/projects
 
 hooks:
-  remove:
-    # Close this worktree's git pane. Never closes the pane you are running wag from,
-    # and does nothing when tmux is not running.
-    - |
-      command -v tmux >/dev/null 2>&1 || exit 0
-      s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
-      tmux has-session -t "=$s" 2>/dev/null || exit 0
-      tmux list-panes -s -t "=$s" -F '#{pane_id} #{@wag_wt}' | while read -r id wt; do
-        [ "$wt" = "$WAG_WORKTREE" ] && [ "$id" != "$TMUX_PANE" ] && tmux kill-pane -t "$id"
-      done
-      tmux select-layout -t "=$s:" main-vertical 2>/dev/null
-      exit 0
+  repo:
+    remove:
+      # Close this worktree's git pane. Never closes the pane you are running wag from,
+      # and does nothing when tmux is not running.
+      - |
+        command -v tmux >/dev/null 2>&1 || exit 0
+        s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
+        tmux has-session -t "=$s" 2>/dev/null || exit 0
+        tmux list-panes -s -t "=$s" -F '#{pane_id} #{@wag_wt}' | while read -r id wt; do
+          [ "$wt" = "$WAG_WORKTREE" ] && [ "$id" != "$TMUX_PANE" ] && tmux kill-pane -t "$id"
+        done
+        tmux select-layout -t "=$s:" main-vertical 2>/dev/null
+        exit 0
 
 start:
   tmux:

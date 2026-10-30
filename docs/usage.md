@@ -17,7 +17,8 @@ the feature's name. Your main checkouts are left alone, so you can work on sever
 - **Main checkouts** are the normal clones, directly under `projects` (or wherever a repo's `path` says).
   Creating a worktree puts a main checkout that sits on another branch back on origin's default branch,
   as long as it is clean; one with uncommitted changes is left alone, with a note.
-- **The feature folder** is `projects/<feature>`, one flat folder per feature holding nothing but worktrees.
+- **The feature folder** is `projects/<feature>`, one flat folder per feature holding a worktree per repo, plus
+  whatever a feature hook puts beside them ([hooks](configuration.md#hooks)).
   A feature whose name is a path gets its slashes turned into dashes, so `feature/abc123` is the folder
   `feature-abc123`. Set `features` in the config to collect feature folders in a folder of their own inside
   `projects` ([configuration](configuration.md#features)).
@@ -88,22 +89,24 @@ Everything else, including hook output, goes to stderr. The exit code is `0` on 
 
 ## A session, start to finish
 
-This is real output, with a config that copies each repo's `.env` and runs one command for `api`
-([configuration](configuration.md) explains the config).
+This is real output, with a config that copies each repo's `.env`, runs one command for `api`, and writes one
+note for the feature ([configuration](configuration.md) explains the config).
 
 ```text
 $ wag
 No features yet. Create one with: wag <feature> <repo>...
 
 $ wag feature-a api web
-create hooks for feature-a/api:
+repo create hooks for feature-a/api:
   $ cp "$WAG_MAIN/.env" .env 2>/dev/null || true
   $ git log --oneline -1
-093cdd3 Initial commit
+cb90e2f Initial commit
 Created feature-a/api on branch feature-a, not on origin yet; a plain git push creates origin/feature-a.
-create hooks for feature-a/web:
+repo create hooks for feature-a/web:
   $ cp "$WAG_MAIN/.env" .env 2>/dev/null || true
 Created feature-a/web on branch feature-a, not on origin yet; a plain git push creates origin/feature-a.
+feature create hooks for feature-a:
+  $ printf '# %s\n' "$WAG_BRANCH" > NOTES.md
 ~/projects/feature-a
 
 $ wag
@@ -115,8 +118,9 @@ $ wag feature-a api
 ~/projects/feature-a/api
 ```
 
-The second call to `wag feature-a api` only prints the path: the worktree already exists.
-Run it with a new repo, such as `wag feature-a docs`, to add that repo to the feature.
+The second call to `wag feature-a api` only prints the path: the worktree already exists, so no hooks run.
+Run it with a new repo, such as `wag feature-a docs`, to add that repo to the feature: that repo's own create
+hooks run, the feature's do not, because the feature was already there.
 
 ### Working in it
 
@@ -189,11 +193,12 @@ wag feature-a api                          # now works
   - the feature name is the name of a repository folder;
   - the config file has a mistake (the error names the exact key).
 - **All or nothing.** When you create several repos, wag checks all of them before touching any.
-  If one fails during creation, including one of its create hooks, every worktree and branch made by that call
+  If one fails during creation, including one of the create hooks at either level, every worktree and branch made by that call
   is rolled back. A main checkout that was put back on the default branch stays there: nothing is lost by it.
 - **New branches start from origin.** A new branch starts from `origin/<feature>` if it exists, otherwise from
   origin's default branch, never from whatever happens to be checked out locally.
-- **Steps are yours.** A hook step is a bash command line run in the worktree, so a `.env` a hook copies in
+- **Steps are yours.** A hook step is a bash command line, run in the worktree for a repo hook and in the
+  feature folder for a feature hook, so a `.env` a hook copies in
   is simply an untracked file: wag does not add anything to `.gitignore` or the exclude list for you.
 
 ```text
