@@ -555,6 +555,8 @@ test("a failing remove hook stops the removal unless forced", () => {
 
 // ───────────────────────── feature hooks ─────────────────────────
 
+// The worktrees are counted with grep, not `wc -w`: BSD wc pads its number with spaces and GNU wc does not,
+// so the same step would print different things on macOS and on Linux.
 test("feature create hooks run once, in the feature folder, after every repo's own", () => {
   const s = setup(`hooks:
   repo:
@@ -562,7 +564,7 @@ test("feature create hooks run once, in the feature folder, after every repo's o
       - echo "repo $WAG_REPO" >> ../order.txt
   feature:
     create:
-      - echo "feature $WAG_FEATURE in $(basename "$PWD") with $(echo $WAG_REPOS) and $(echo $WAG_WORKTREES | wc -w) worktrees" >> order.txt
+      - echo "feature $WAG_FEATURE in $(basename "$PWD") with $(echo $WAG_REPOS) and $(printf '%s\\n' "$WAG_WORKTREES" | grep -c .) worktrees" >> order.txt
 `, ["app", "web", "docs"]);
   const order = join(s.projects, "feature-a", "order.txt");
 
