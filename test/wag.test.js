@@ -587,7 +587,7 @@ test("feature remove hooks run once, before the last worktree goes", () => {
   const s = setup(`hooks:
   feature:
     remove:
-      - echo "$(echo $WAG_REPOS) with $(ls)" >> ../removed.txt
+      - echo "$(echo $WAG_REPOS) with $(ls) repo=\${WAG_REPO-unset}" >> ../removed.txt
 `, ["app", "web"]);
   const removed = join(s.projects, "removed.txt");
   s.wag("feature-a", "app", "web");
@@ -596,9 +596,10 @@ test("feature remove hooks run once, before the last worktree goes", () => {
   assert.equal(s.wag("feature-a", "web", "--rm").code, 0);
   assert.equal(existsSync(removed), false);
 
-  // The rest of it is, and the hook still sees the worktrees.
+  // The rest of it is, and the hook still sees the worktrees. WAG_REPO is never set at this level, not even
+  // here, where the feature is down to one repo: the repos are a list, however many of them there are.
   assert.equal(s.wag("feature-a", "--rm").code, 0);
-  assert.equal(readFileSync(removed, "utf8").trim(), "app with app");
+  assert.equal(readFileSync(removed, "utf8").trim(), "app with app repo=unset");
   assert.equal(existsSync(join(s.projects, "feature-a")), false);
 });
 

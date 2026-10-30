@@ -436,6 +436,9 @@ function runRepoHooks(cfg, event, ctx) {
  * create once the feature's worktrees are all there and their own create hooks have run, remove before the
  * last of them is taken away. Adding a repo to a feature that already exists is not the feature appearing,
  * and removing one repo of several is not it going away, so neither runs then.
+ * There is no WAG_REPO or WAG_WORKTREE here, not even for a feature with one repo: a step that reaches for
+ * one would work on such a feature and then quietly do nothing on the next, which has two. Repo hooks are
+ * where a single repo is the subject; here the repos are a list.
  */
 function runFeatureHooks(cfg, event, { feature, repos, worktrees }) {
   const steps = cfg.hooks.feature[event];
@@ -448,7 +451,6 @@ function runFeatureHooks(cfg, event, { feature, repos, worktrees }) {
     WAG_FEATURE_DIR: dir,
     WAG_REPOS: repos.join("\n"),
     WAG_WORKTREES: worktrees.join("\n"),
-    ...(repos.length === 1 ? { WAG_REPO: repos[0], WAG_WORKTREE: worktrees[0] } : {}),
   };
   for (const step of steps) runCommand(cfg, step, dir, env);
 }

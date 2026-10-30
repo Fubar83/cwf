@@ -193,7 +193,20 @@ Feature hooks:
 | `WAG_FEATURE_DIR` | The feature folder's full path, which is where the step runs. |
 | `WAG_REPOS` | Every repo of the feature, one per line. |
 | `WAG_WORKTREES` | Their worktree paths, one per line, in the same order. |
-| `WAG_REPO`, `WAG_WORKTREE` | Also set when the feature has exactly one repo. |
+
+There is no `WAG_REPO` or `WAG_WORKTREE` at this level, not even for a feature with one repo: at the feature
+level the repos are a list, so a step written around a single one would work on one feature and quietly do
+nothing on the next. Loop over `WAG_REPOS`, or put the step under `hooks.repo`, where one repo is the subject.
+
+```yaml
+hooks:
+  feature:
+    create:
+      - |
+        printf '%s\n' "$WAG_WORKTREES" | while read -r wt; do
+          echo "$(basename "$wt"): $(git -C "$wt" rev-parse --short HEAD)" >> HEADS.txt
+        done
+```
 
 Start profiles get a different set, listed in [agents.md](agents.md).
 
