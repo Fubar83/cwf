@@ -55,13 +55,14 @@ Then create your config from one of the [examples](examples), for example
 ## Documentation
 
 - [Using wag](docs/usage.md): the layout, every command, a full session with real output, and what wag guarantees.
-- [Configuration](docs/configuration.md): the config file in your home folder, hooks that copy local files or run
-  commands, and start profiles.
+- [Configuration](docs/configuration.md): the config file in your home folder, hooks per repo and per feature,
+  and start profiles.
 - [Agents](docs/agents.md): running AI agent CLIs on a whole feature or on one repo.
 - [tmux](docs/tmux.md): a tmux session per feature with your agent and a live git pane, in three layouts.
 - [Examples](examples): `minimal.yaml` (works everywhere), `config.yaml` (tmux: agent and a git view of the whole
   feature), `tmux-per-repo.yaml` (a git pane per repo), `tmux-switch.yaml` (one repo at a time, with a terminal),
-  and the scripts they use: `git-view.sh` (a live, read-only git view) and `tmux-next-repo.sh`.
+  and the scripts they use: `git-view.sh` (a live, read-only git view), `tmux-next-repo.sh`, and
+  `jira-notes.sh` (a feature hook: notes for a branch that ends in a ticket key).
 
 ## In short
 
@@ -73,7 +74,9 @@ Then create your config from one of the [examples](examples), for example
   a diverged branch or a config mistake stops wag before it changes anything.
 - **All or nothing.** If one repo fails, everything that call created is rolled back. Removing checks every
   worktree before removing any.
-- **Hooks are bash command lines**, one per step, or the name of a script file next to your config.
+- **Hooks are bash command lines**, one per step, or the name of a script file next to your config. They run
+  per repo, in each worktree (`hooks.repo`), or once for the whole feature, in the feature folder
+  (`hooks.feature`) — for the note, ticket or container a feature has one of.
 - **Configured in your home folder**, in `~/.config/wag/config.yaml`. Nothing is needed in the repos.
   `projects` is where your main checkouts are; `features` names a folder inside it for the feature folders,
   so the two are not mixed together.

@@ -167,18 +167,19 @@ This is [examples/tmux-per-repo.yaml](../examples/tmux-per-repo.yaml):
 
 ```yaml
 hooks:
-  remove:
-    # Close this worktree's git pane. Never closes the pane you are running wag from,
-    # and does nothing when tmux is not running.
-    - |
-      command -v tmux >/dev/null 2>&1 || exit 0
-      s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
-      tmux has-session -t "=$s" 2>/dev/null || exit 0
-      tmux list-panes -s -t "=$s" -F '#{pane_id} #{@wag_wt}' | while read -r id wt; do
-        [ "$wt" = "$WAG_WORKTREE" ] && [ "$id" != "$TMUX_PANE" ] && tmux kill-pane -t "$id"
-      done
-      tmux select-layout -t "=$s:" main-vertical 2>/dev/null
-      exit 0
+  repo:
+    remove:
+      # Close this worktree's git pane. Never closes the pane you are running wag from,
+      # and does nothing when tmux is not running.
+      - |
+        command -v tmux >/dev/null 2>&1 || exit 0
+        s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
+        tmux has-session -t "=$s" 2>/dev/null || exit 0
+        tmux list-panes -s -t "=$s" -F '#{pane_id} #{@wag_wt}' | while read -r id wt; do
+          [ "$wt" = "$WAG_WORKTREE" ] && [ "$id" != "$TMUX_PANE" ] && tmux kill-pane -t "$id"
+        done
+        tmux select-layout -t "=$s:" main-vertical 2>/dev/null
+        exit 0
 
 start:
   tmux:
@@ -244,32 +245,33 @@ did not create. This is [examples/tmux-switch.yaml](../examples/tmux-switch.yaml
 
 ```yaml
 hooks:
-  remove:
-    # Close this repo's git pane and terminal. If they are on the right of the main window, show the next repo
-    # there first. Never closes the pane you are running wag from, and does nothing when tmux is not running.
-    - |
-      command -v tmux >/dev/null 2>&1 || exit 0
-      s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
-      tmux has-session -t "=$s" 2>/dev/null || exit 0
-      main=$(tmux show-options -t "=$s:" -v @wag_main 2>/dev/null)
-      panes=$(tmux list-panes -s -t "=$s" -F '#{window_id} #{pane_id} #{@wag_role} #{@wag_wt}')
-      shown=no; mine=no
-      while read -r win id role wt; do
-        [ "$wt" = "$WAG_WORKTREE" ] || continue
-        [ "$win" = "$main" ] && shown=yes
-        [ "$id" = "$TMUX_PANE" ] && mine=yes
-      done <<EOF
-      $panes
-      EOF
-      if [ "$shown" = yes ] && [ "$mine" = no ]; then
-        sh "$HOME/.config/wag/tmux-next-repo.sh" "$s"
-      fi
-      while read -r win id role wt; do
-        [ "$wt" = "$WAG_WORKTREE" ] && [ "$id" != "$TMUX_PANE" ] && tmux kill-pane -t "$id"
-      done <<EOF
-      $panes
-      EOF
-      exit 0
+  repo:
+    remove:
+      # Close this repo's git pane and terminal. If they are on the right of the main window, show the next repo
+      # there first. Never closes the pane you are running wag from, and does nothing when tmux is not running.
+      - |
+        command -v tmux >/dev/null 2>&1 || exit 0
+        s=$(printf '%s' "$WAG_BRANCH" | tr '.:' '__')
+        tmux has-session -t "=$s" 2>/dev/null || exit 0
+        main=$(tmux show-options -t "=$s:" -v @wag_main 2>/dev/null)
+        panes=$(tmux list-panes -s -t "=$s" -F '#{window_id} #{pane_id} #{@wag_role} #{@wag_wt}')
+        shown=no; mine=no
+        while read -r win id role wt; do
+          [ "$wt" = "$WAG_WORKTREE" ] || continue
+          [ "$win" = "$main" ] && shown=yes
+          [ "$id" = "$TMUX_PANE" ] && mine=yes
+        done <<EOF
+        $panes
+        EOF
+        if [ "$shown" = yes ] && [ "$mine" = no ]; then
+          sh "$HOME/.config/wag/tmux-next-repo.sh" "$s"
+        fi
+        while read -r win id role wt; do
+          [ "$wt" = "$WAG_WORKTREE" ] && [ "$id" != "$TMUX_PANE" ] && tmux kill-pane -t "$id"
+        done <<EOF
+        $panes
+        EOF
+        exit 0
 
 start:
   tmux:

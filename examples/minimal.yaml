@@ -3,10 +3,22 @@
 
 projects: ~/projects
 
+# repo hooks run for every repo of the feature, in its worktree.
+# feature hooks run once for the whole feature, in the feature folder that holds the worktrees.
 hooks:
-  create:
-    # Bring each repo's local .env (from its main checkout) into new worktrees, if it has one.
-    - cp "$WAG_MAIN/.env" .env 2>/dev/null || true
+  repo:
+    create:
+      # Bring each repo's local .env (from its main checkout) into new worktrees, if it has one.
+      - cp "$WAG_MAIN/.env" .env 2>/dev/null || true
+  feature:
+    create:
+      # A note beside the worktrees, written once, when the feature is created.
+      - |
+        printf '# %s\n\n' "$WAG_BRANCH" > NOTES.md
+        printf -- '- %s\n' $WAG_REPOS >> NOTES.md
+    remove:
+      # Take it with the feature, so the feature folder can go too.
+      - rm -f NOTES.md
 
 repos:
   api:

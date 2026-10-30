@@ -1,5 +1,6 @@
 # wag config: a complete example for Linux, macOS or WSL.
-# Copy to ~/.config/wag/config.yaml (or point WAG_CONFIG at it), and examples/git-view.sh to ~/.config/wag/git-view.sh.
+# Copy to ~/.config/wag/config.yaml (or point WAG_CONFIG at it), and examples/git-view.sh and
+# examples/jira-notes.sh to ~/.config/wag/.
 # Everything lives here in your home folder; wag never needs files in the repos themselves.
 # See docs/configuration.md for every option, and docs/tmux.md for the tmux layouts
 # (examples/tmux-per-repo.yaml and examples/tmux-switch.yaml have other ones).
@@ -10,13 +11,24 @@
 projects: ~/projects
 # features: _features    # uncomment to collect feature folders in ~/projects/_features instead
 
-# Hooks for every repo. Global steps run first, then the repo's own. Each step is a bash command line, run
-# in the worktree; a step whose first word is a file next to this config (setup.sh, say) is run as a script.
-# create: after a worktree is made. If a step fails, the whole create is rolled back.
-# remove: before a worktree is removed. If a step fails, nothing is removed (unless --force).
+# Hooks come at two levels, each with create and remove. Each step is a bash command line; a step whose first
+# word is a file next to this config (setup.sh, say) is run as a script.
+#   repo:     once per repo of the feature, in its worktree. These steps run first, then the repo's own below.
+#   feature:  once for the whole feature, in the feature folder: on create when the feature is created (after
+#             every worktree is there), on remove before its last worktree goes.
+# create: if a step fails, the whole create is rolled back. remove: if a step fails, nothing is removed
+# (unless --force).
 hooks:
-  create:
-    - cp "$WAG_MAIN/.env" .env 2>/dev/null || true   # the main checkout's local .env, if it has one
+  repo:
+    create:
+      - cp "$WAG_MAIN/.env" .env 2>/dev/null || true   # the main checkout's local .env, if it has one
+  feature:
+    create:
+      # NOTES.md beside the worktrees when the branch ends in a Jira key, like feature/vfs-1234.
+      # Copy examples/jira-notes.sh to ~/.config/wag/jira-notes.sh for this one.
+      - jira-notes.sh https://yourcompany.atlassian.net
+    remove:
+      - rm -f NOTES.md
 
 repos:
   repo1:

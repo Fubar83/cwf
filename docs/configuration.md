@@ -19,14 +19,18 @@ Ready-made files are in [examples/](../examples): `minimal.yaml`, `config.yaml`,
 projects: ~/projects          # where the main checkouts are
 features: _features           # a folder inside projects for them; default: in projects itself
 
-hooks:                        # for every repo
-  create: []                  # after a worktree is made
-  remove: []                  # before a worktree is removed
+hooks:
+  repo:                       # for every repo of the feature, in its worktree
+    create: []                # after a worktree is made
+    remove: []                # before a worktree is removed
+  feature:                    # once for the whole feature, in the feature folder
+    create: []                # when the feature is created, with every worktree of it in place
+    remove: []                # before the feature's last worktree goes
 
 repos:                        # per repo, by folder name
   api:
     path: ~/work/api          # optional: main checkout outside projects
-    create: []
+    create: []                # this repo's own hooks, run after the hooks.repo ones
     remove: []
 
 start:                        # start profiles, picked with +name
@@ -37,7 +41,7 @@ autostart: [hello]            # profiles to run when no +name is given
 ```
 
 Unknown keys are errors, so a typo never goes unnoticed. The error names the exact place,
-for example `config repos.api.create[0]: unknown key "too" (allowed: copy, to, optional, overwrite)`.
+for example `config hooks: unknown key "worktree" (allowed: repo, feature)`.
 
 ## projects
 
@@ -80,12 +84,40 @@ itself a git repository cannot hold feature folders, and wag says so rather than
 
 ## Hooks
 
-Hooks run for one worktree at a time:
+Hooks say which level they are on, and each level has a `create` and a `remove`:
 
-- **create** runs right after the worktree is made. If a step fails, wag rolls back everything that call created.
-- **remove** runs before the worktree is removed. If a step fails, nothing is removed, unless you pass `--force`.
+| Level | Runs | Where | Steps from |
+|---|---|---|---|
+| `hooks.repo` | once per repo of the feature | that repo's worktree | `hooks.repo`, then `repos.<name>` |
+| `hooks.feature` | once for the whole feature | the feature folder | `hooks.feature` |
 
-The steps under `hooks` run for every repo first, then the steps under `repos.<name>` for that repo.
+- **repo create** runs right after a worktree is made; **repo remove** before it is removed.
+- **feature create** runs when the feature itself is created, once all of its worktrees are there and their
+  repo hooks have run. **feature remove** runs before the feature's last worktrees go, while they are all
+  still in place.
+
+```yaml
+hooks:
+  repo:
+    create:
+      - npm ci
+  feature:
+    create:
+      - printf '# %s\n' "$WAG_BRANCH" > NOTES.md
+    remove:
+      - rm -f NOTES.md
+```
+
+So the feature level is for the things a feature has one of: a note or a scratch file beside the worktrees,
+a ticket looked up once, a container or a database for the whole feature. Adding a repo to a feature that
+already exists is that repo appearing, not the feature, so only its repo hooks run; removing one repo of
+several is the same the other way round. Opening a feature whose worktrees are all there creates nothing and
+runs no hooks at all — [start profiles](#start-profiles) are the ones that run every time.
+
+If a create hook fails, at either level, every worktree and branch that call made is rolled back; a feature
+folder that a hook has already written into is kept, and wag says so. If a remove hook fails, nothing is
+removed, unless you pass `--force`. The feature folder itself is removed once it is empty, so a file a feature
+create hook writes keeps the folder after the worktrees go unless a remove hook clears it up, as above.
 
 ## Steps
 
@@ -94,12 +126,14 @@ step can be: copying a file in is `cp`, as it would be in any script.
 
 ```yaml
 hooks:
-  create:
-    - cp "$WAG_MAIN/.env" .env 2>/dev/null || true
-    - npm ci
+  repo:
+    create:
+      - cp "$WAG_MAIN/.env" .env 2>/dev/null || true
+      - npm ci
 ```
 
-Hook steps run in the worktree; start profile steps run in the path wag prints. Either way the step's output
+A repo hook's steps run in the worktree, a feature hook's in the feature folder, and a start profile's in the
+path wag prints. Wherever they run, the step's output
 goes to stderr, so it never mixes with that path. A step that exits non-zero fails: a create hook rolls the
 whole call back, a remove hook stops the removal. Use `|| true` for something allowed to fail, as above for
 a `.env` that may not exist.
@@ -110,11 +144,12 @@ and a multi-line step is an ordinary bash script:
 
 ```yaml
 hooks:
-  create:
-    - |
-      if [ -f package-lock.json ]; then npm ci
-      elif [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile
-      fi
+  repo:
+    create:
+      - |
+        if [ -f package-lock.json ]; then npm ci
+        elif [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile
+        fi
 ```
 
 ### Script files
@@ -124,8 +159,9 @@ arguments after it. So `~/.config/wag/setup.sh` is reached as `setup.sh`:
 
 ```yaml
 hooks:
-  create:
-    - setup.sh --verbose
+  repo:
+    create:
+      - setup.sh --verbose
 ```
 
 It needs no execute bit and no shebang, because wag runs `bash <the file>`. The first word has to be a bare
@@ -139,13 +175,25 @@ next to your config is visible rather than silent:
 
 ### Variables
 
+Repo hooks:
+
 | Variable | Value |
 |---|---|
 | `WAG_FEATURE` | The feature name. |
 | `WAG_BRANCH` | The branch name in every repo. It is the same as the feature name. |
 | `WAG_REPO` | The repo name. |
-| `WAG_WORKTREE` | The worktree's full path. |
+| `WAG_WORKTREE` | The worktree's full path, which is where the step runs. |
 | `WAG_MAIN` | The main checkout's full path. |
+
+Feature hooks:
+
+| Variable | Value |
+|---|---|
+| `WAG_FEATURE`, `WAG_BRANCH` | The feature name, which is also the branch name. |
+| `WAG_FEATURE_DIR` | The feature folder's full path, which is where the step runs. |
+| `WAG_REPOS` | Every repo of the feature, one per line. |
+| `WAG_WORKTREES` | Their worktree paths, one per line, in the same order. |
+| `WAG_REPO`, `WAG_WORKTREE` | Also set when the feature has exactly one repo. |
 
 Start profiles get a different set, listed in [agents.md](agents.md).
 
@@ -157,8 +205,9 @@ matters to you.
 
 ```yaml
 hooks:
-  create:
-    - cp "$WAG_MAIN/.env" .env 2>/dev/null || true   # each repo's own local .env, if it has one
+  repo:
+    create:
+      - cp "$WAG_MAIN/.env" .env 2>/dev/null || true   # each repo's own local .env, if it has one
 repos:
   api:
     create:
@@ -179,6 +228,40 @@ repos:
       - dotnet restore
     remove:
       - docker compose down
+```
+
+One file for the whole feature, written when it is created. [examples/jira-notes.sh](../examples/jira-notes.sh),
+kept next to your config, is this: when the branch's last segment looks like a ticket key — `feature/vfs-1234`,
+`bugfix/VFS-1234`, `VFS-1234` — it writes a `NOTES.md` beside the worktrees with a link to the ticket and the
+repos the feature spans. Any other branch name is left alone, and notes you have already written in are never
+overwritten.
+
+```yaml
+hooks:
+  feature:
+    create:
+      - jira-notes.sh https://yourcompany.atlassian.net
+    remove:
+      - rm -f NOTES.md
+```
+
+```text
+~/projects/feature-vfs-1234/NOTES.md      # VFS-1234, the link to it, and the repos below
+~/projects/feature-vfs-1234/api/
+~/projects/feature-vfs-1234/web/
+```
+
+The same thing inline, without a script file:
+
+```yaml
+hooks:
+  feature:
+    create:
+      - |
+        key=${WAG_BRANCH##*/}
+        if [[ $key =~ ^[A-Za-z][A-Za-z0-9]+-[0-9]+$ ]]; then
+          printf '%s/browse/%s\n' "https://yourcompany.atlassian.net" "$key" > TICKET.txt
+        fi
 ```
 
 ## Start profiles
